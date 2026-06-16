@@ -9,6 +9,10 @@
   let playing = $state(-1)
   let audioElements = $state({})
   let exportProgress = $state('')
+  let editingLine = $state(-1)        // which line is being edited (text)
+  let editText = $state('')            // temporary edit buffer
+  let editingSpeaker = $state(-1)      // which line's speaker is being edited
+  let editSpeaker = $state('')
 
   // Generate TTS for one line
   async function generateLine(index) {
@@ -74,6 +78,87 @@
     playing = -1
   }
 
+  // ---- Inline Edit: Text ----
+  function startEditText(index) {
+    editingLine = index
+    editText = script[index].text
+  }
+
+  function saveEditText(index) {
+    if (editText.trim() && editText !== script[index].text) {
+      script[index].text = editText.trim()
+      // Invalidate cached audio so user regenerates with new text
+      if (audioUrls[index]) {
+        URL.revokeObjectURL(audioUrls[index])
+        delete audioUrls[index]
+        audioUrls = { ...audioUrls }
+      }
+    }
+    editingLine = -1
+    editText = ''
+  }
+
+  function cancelEditText() {
+    editingLine = -1
+    editText = ''
+  }
+
+  function handleTextKeydown(e, index) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      saveEditText(index)
+    } else if (e.key === 'Escape') {
+      cancelEditText()
+    }
+  }
+
+  // ---- Inline Edit: Speaker ----
+  function startEditSpeaker(index) {
+    editingSpeaker = index
+    editSpeaker = script[index].speaker || '旁白'
+  }
+
+  function saveEditSpeaker(index) {
+    const newName = editSpeaker.trim()
+    if (newName && newName !== script[index].speaker) {
+      script[index].speaker = newName
+      // Add to characters list if not existing
+      if (!characters.find(c => c.name === newName)) {
+        characters.push({ name: newName, role: 'supporting', voice_design: '', gender: '', age: '', personality: '' })
+      }
+      // Invalidate cached audio
+      if (audioUrls[index]) {
+        URL.revokeObjectURL(audioUrls[index])
+        delete audioUrls[index]
+        audioUrls = { ...audioUrls }
+      }
+    }
+    editingSpeaker = -1
+    editSpeaker = ''
+  }
+
+  function cancelEditSpeaker() {
+    editingSpeaker = -1
+    editSpeaker = ''
+  }
+
+  function handleSpeakerKeydown(e, index) {
+    if (e.key === 'Enter') { e.preventDefault(); saveEditSpeaker(index) }
+    else if (e.key === 'Escape') { cancelEditSpeaker() }
+  }
+
+  // ---- Inline Edit: Emotion ----
+  function updateEmotion(index, emotion) {
+    script[index].emotion = emotion
+    script[index].emotion_hint = emotion + ' 语气'
+    // Invalidate cached audio
+    if (audioUrls[index]) {
+      URL.revokeObjectURL(audioUrls[index])
+      delete audioUrls[index]
+      audioUrls = { ...audioUrls }
+    }
+  }
+
   // Export WAV
   async function exportWAV() {
     exportProgress = '正在合成未生成的音频...'
@@ -118,6 +203,7 @@
 <div class="script-editor">
   <div class="toolbar">
     <h3>📜 脚本台词 ({script.length} 行)</h3>
+    <p class="hint">💡 点击台词文本编辑，点击角色名修改说话人，生成后可播放试听</p>
     <div class="tb-actions">
       <button onclick={generateAll} disabled={generating}>
         {generating ? '⏳ 生成中...' : '🎙️ 一键生成配音'}
@@ -134,24 +220,62 @@
 
   <div class="lines">
     {#each script as line, i}
-      <div class="line" class:playing={playing === i} class:has-audio={!!audioUrls[i]}>
+      <div class="line" class:playing={playing === i} class:has-audio={!!audioUrls[i]} class:editing={editingLine === i}>
         <div class="line-header">
           <span class="line-idx">#{i + 1}</span>
           {#if line.type === 'bgm'}
             <span class="bgm-tag">🎵 BGM: {line.speaker}</span>
           {:else}
-            <span class="role-name">{line.speaker || '旁白'}</span>
-            <select class="emotion-select">
+            <!-- Editable speaker -->
+            {#if editingSpeaker === i}
+              <input
+                class="edit-speaker-input"
+                bind:value={editSpeaker}
+                onkeydown={(e) => handleSpeakerKeydown(e, i)}
+                onblur={() => saveEditSpeaker(i)}
+                autofocus
+              />
+            {:else}
+              <span class="role-name editable" onclick={() => startEditSpeaker(i)} title="点击修改说话人">
+                {line.speaker || '旁白'} ✎
+              </span>
+            {/if}
+
+            <!-- Editable emotion -->
+            <select
+              class="emotion-select"
+              value={line.emotion || '平静'}
+              onchange={(e) => updateEmotion(i, e.target.value)}
+            >
               {#each emotions as e}
-                <option selected={line.emotion === e}>{e}</option>
+                <option value={e} selected={line.emotion === e}>{e}</option>
               {/each}
             </select>
+
             {#if line.sfx?.length}
               <span class="sfx-tag">🔊 {line.sfx.map(s => s.keyword || s.name).join(', ')}</span>
             {/if}
           {/if}
         </div>
-        <div class="line-text">{line.text}</div>
+
+        <!-- Editable text -->
+        {#if editingLine === i}
+          <textarea
+            class="edit-text-input"
+            bind:value={editText}
+            onkeydown={(e) => handleTextKeydown(e, i)}
+            rows="3"
+          ></textarea>
+          <div class="edit-actions">
+            <button class="save-btn" onclick={() => saveEditText(i)}>💾 保存</button>
+            <button class="cancel-btn" onclick={cancelEditText}>取消</button>
+          </div>
+        {:else}
+          <div class="line-text editable" onclick={() => startEditText(i)} title="点击编辑台词">
+            {line.text}
+          </div>
+        {/if}
+
         {#if line.type === 'dialogue'}
           <div class="line-actions">
             {#if currentGenerating === i}
@@ -173,127 +297,89 @@
 </div>
 
 <style>
-  .script-editor {
-    margin-top: 16px;
-  }
+  .script-editor { margin-top: 16px; }
   .toolbar {
     padding: 12px 16px;
     background: #252540;
     border-radius: 10px;
     margin-bottom: 12px;
   }
-  .toolbar h3 { margin-bottom: 8px; }
-  .tb-actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
+  .toolbar h3 { margin-bottom: 4px; }
+  .hint { color: #888; font-size: 0.75rem; margin-bottom: 10px; }
+  .tb-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .tb-actions button {
-    padding: 8px 16px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: #fff;
+    padding: 8px 16px; border: none; border-radius: 8px;
+    cursor: pointer; font-size: 0.85rem; font-weight: 600; color: #fff;
   }
   .tb-actions button:nth-child(1) { background: linear-gradient(135deg, #667eea, #764ba2); }
   .tb-actions button:nth-child(2) { background: linear-gradient(135deg, #4a4, #2a2); }
   .tb-actions button:nth-child(3) { background: #444; }
   .tb-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
   .export-status {
-    margin-top: 8px;
-    padding: 6px 10px;
-    border-radius: 6px;
-    font-size: 0.8rem;
-    color: #aaa;
-    background: #1a1a2e;
+    margin-top: 8px; padding: 6px 10px; border-radius: 6px;
+    font-size: 0.8rem; color: #aaa; background: #1a1a2e;
   }
 
-  .lines {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
+  .lines { display: flex; flex-direction: column; gap: 6px; }
   .line {
-    padding: 10px 14px;
-    background: #1a1a2e;
-    border-radius: 8px;
-    border: 1px solid #2a2a3a;
-    transition: all 0.2s;
+    padding: 10px 14px; background: #1a1a2e; border-radius: 8px;
+    border: 1px solid #2a2a3a; transition: all 0.2s;
   }
-  .line.playing {
-    border-color: #667eea;
-    background: #1e1e38;
+  .line.playing { border-color: #667eea; background: #1e1e38; }
+  .line.has-audio { border-left: 3px solid #4a4; }
+  .line.editing { border-color: #f90; }
+
+  .line-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+  .line-idx { color: #666; font-size: 0.75rem; min-width: 24px; }
+  .role-name {
+    font-weight: 600; font-size: 0.85rem; color: #667eea;
   }
-  .line.has-audio {
-    border-left: 3px solid #4a4;
+  .role-name.editable { cursor: pointer; }
+  .role-name.editable:hover { text-decoration: underline; color: #88a; }
+  .bgm-tag { font-size: 0.85rem; color: #f90; }
+  .sfx-tag { font-size: 0.7rem; color: #888; }
+
+  .edit-speaker-input {
+    width: 100px; padding: 2px 6px; background: #1a1a2e;
+    border: 1px solid #f90; border-radius: 4px;
+    color: #e0e0e0; font-size: 0.85rem; font-weight: 600;
   }
 
-  .line-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 4px;
-    flex-wrap: wrap;
-  }
-  .line-idx {
-    color: #666;
-    font-size: 0.75rem;
-    min-width: 24px;
-  }
-  .role-name {
-    font-weight: 600;
-    font-size: 0.85rem;
-    color: #667eea;
-  }
-  .bgm-tag {
-    font-size: 0.85rem;
-    color: #f90;
-  }
-  .sfx-tag {
-    font-size: 0.7rem;
-    color: #888;
-  }
   .emotion-select {
-    padding: 2px 6px;
-    background: #252540;
-    border: 1px solid #3a3a5a;
-    border-radius: 4px;
-    color: #aaa;
-    font-size: 0.7rem;
+    padding: 2px 6px; background: #252540;
+    border: 1px solid #3a3a5a; border-radius: 4px;
+    color: #aaa; font-size: 0.7rem; cursor: pointer;
   }
+  .emotion-select:hover { border-color: #667eea; }
+
   .line-text {
-    font-size: 0.9rem;
-    color: #ccc;
-    line-height: 1.5;
-    margin-bottom: 6px;
+    font-size: 0.9rem; color: #ccc; line-height: 1.5; margin-bottom: 4px;
+    padding: 4px 6px; border-radius: 4px; cursor: text;
   }
-  .line-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .line-text.editable:hover { background: rgba(102,126,234,0.08); }
+
+  .edit-text-input {
+    width: 100%; padding: 8px 10px; background: #1a1a2e;
+    border: 1px solid #f90; border-radius: 6px;
+    color: #e0e0e0; font-size: 0.9rem; line-height: 1.5;
+    font-family: inherit; resize: vertical; margin-bottom: 6px;
   }
+
+  .edit-actions { display: flex; gap: 6px; margin-bottom: 6px; }
+  .edit-actions button {
+    padding: 4px 12px; border: none; border-radius: 6px;
+    cursor: pointer; font-size: 0.75rem;
+  }
+  .save-btn { background: #4a4; color: #fff; }
+  .cancel-btn { background: #444; color: #aaa; }
+
+  .line-actions { display: flex; align-items: center; gap: 8px; }
   .line-actions button {
-    padding: 4px 10px;
-    border: 1px solid #3a3a5a;
-    background: transparent;
-    color: #aaa;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.75rem;
+    padding: 4px 10px; border: 1px solid #3a3a5a; background: transparent;
+    color: #aaa; border-radius: 6px; cursor: pointer; font-size: 0.75rem;
   }
   .line-actions button:hover { border-color: #667eea; color: #fff; }
-  .play-btn {
-    border-color: #4a4 !important;
-    color: #4a4 !important;
-  }
-  .gen-status {
-    font-size: 0.75rem;
-    color: #f90;
-  }
-  .vol-slider {
-    width: 60px;
-    accent-color: #667eea;
-  }
+  .play-btn { border-color: #4a4 !important; color: #4a4 !important; }
+  .gen-status { font-size: 0.75rem; color: #f90; }
+  .vol-slider { width: 60px; accent-color: #667eea; }
 </style>
