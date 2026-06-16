@@ -82,6 +82,9 @@ func (s *Server) setupRouter() {
 		// Formats
 		r.Get("/formats", s.supportedFormats)
 
+		// PDF classification
+		r.Post("/pdf/classify", s.classifyPDF)
+
 		// Library import
 		r.Post("/library/import", s.importLibrary)
 	})

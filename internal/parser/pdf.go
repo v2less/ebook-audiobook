@@ -11,7 +11,8 @@ import (
 	"ebook-audiobook/internal/model"
 )
 
-// PDFParser 解析 PDF 文件（优先用 opendataloader-pdf 子进程）
+// PDFParser 解析 PDF 文件。
+// 解析优先级：pdf-inspector (pdf2md) > opendataloader-pdf > pdftotext
 type PDFParser struct{}
 
 func NewPDFParser() *PDFParser {
@@ -22,15 +23,80 @@ func (p *PDFParser) SupportedFormats() []string {
 	return []string{".pdf"}
 }
 
+// PDFClassification result from pdf-inspector detect-pdf
+type PDFClassification struct {
+	PDFType           string  `json:"pdf_type"`           // "text_based", "scanned", "image_based", "mixed"
+	Confidence        float64 `json:"confidence"`
+	PagesNeedingOCR   []int   `json:"pages_needing_ocr,omitempty"`
+}
+
 func (p *PDFParser) Parse(filePath string) (*model.Book, error) {
-	// Try opendataloader-pdf first
-	book, err := p.parseViaOpenDataLoader(filePath)
+	// 1. Try pdf-inspector (pdf2md) — fastest, best quality
+	book, err := p.parseViaPdfInspector(filePath)
 	if err == nil && len(book.Chapters) > 0 {
 		return book, nil
 	}
-	// Fallback: extract text directly
+
+	// 2. Try opendataloader-pdf — good structure, Python-based
+	book, err = p.parseViaOpenDataLoader(filePath)
+	if err == nil && len(book.Chapters) > 0 {
+		return book, nil
+	}
+
+	// 3. Fallback: pdftotext plain text extraction
 	return p.parseSimple(filePath)
 }
+
+// ClassifyPDF runs pdf-inspector's detect-pdf to determine if a PDF is scannable
+func (p *PDFParser) ClassifyPDF(filePath string) (*PDFClassification, error) {
+	if _, err := exec.LookPath("detect-pdf"); err != nil {
+		return nil, fmt.Errorf("detect-pdf not available (install pdf-inspector)")
+	}
+
+	absPath, _ := filepath.Abs(filePath)
+	cmd := exec.Command("detect-pdf", absPath, "--json")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("detect-pdf: %w", err)
+	}
+
+	var result PDFClassification
+	if err := json.Unmarshal(out, &result); err != nil {
+		return nil, fmt.Errorf("parse detect-pdf output: %w", err)
+	}
+	return &result, nil
+}
+
+// ========================
+// pdf-inspector (pdf2md)
+// ========================
+
+func (p *PDFParser) parseViaPdfInspector(filePath string) (*model.Book, error) {
+	if _, err := exec.LookPath("pdf2md"); err != nil {
+		return nil, fmt.Errorf("pdf2md not available: %w", err)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "pdf-inspector-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	absPath, _ := filepath.Abs(filePath)
+	mdPath := filepath.Join(tmpDir, "output.md")
+
+	// pdf2md with page breaks for better chapter segmentation
+	cmd := exec.Command("pdf2md", absPath, "--pages", "--raw", "-o", mdPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("pdf2md failed: %s: %w", string(out), err)
+	}
+
+	return p.buildBookFromMarkdown(mdPath, filePath)
+}
+
+// ========================
+// opendataloader-pdf
+// ========================
 
 // parseViaOpenDataLoader 通过 opendataloader-pdf 解析（使用 JSON+Markdown 双输出）
 func (p *PDFParser) parseViaOpenDataLoader(filePath string) (*model.Book, error) {
@@ -79,10 +145,10 @@ func (p *PDFParser) parseViaOpenDataLoader(filePath string) (*model.Book, error)
 }
 
 type odlElement struct {
-	Type    string  `json:"type"`
-	Content string  `json:"content"`
-	Page    int     `json:"page_number"`
-	Level   int     `json:"heading_level,omitempty"`
+	Type    string    `json:"type"`
+	Content string    `json:"content"`
+	Page    int       `json:"page_number"`
+	Level   int       `json:"heading_level,omitempty"`
 	BBox    []float64 `json:"bounding_box,omitempty"`
 }
 
@@ -165,7 +231,7 @@ func (p *PDFParser) buildBookFromODLJSON(jsonPath, srcPath string) (*model.Book,
 	return book, nil
 }
 
-// buildBookFromMarkdown creates a Book from markdown output
+// buildBookFromMarkdown creates a Book from Markdown output (shared by pdf-inspector and opendataloader-pdf)
 func (p *PDFParser) buildBookFromMarkdown(mdPath, srcPath string) (*model.Book, error) {
 	data, err := os.ReadFile(mdPath)
 	if err != nil {
@@ -175,7 +241,8 @@ func (p *PDFParser) buildBookFromMarkdown(mdPath, srcPath string) (*model.Book, 
 	text := string(data)
 	title := strings.TrimSuffix(filepath.Base(srcPath), ".pdf")
 
-	chapters := splitByHeadings(text, title)
+	// Split by <!-- Page N --> markers (pdf-inspector --pages flag) or by # headings
+	chapters := p.splitPDFMarkdown(text, title)
 	return &model.Book{
 		Title:    title,
 		Author:   "Unknown",
@@ -185,11 +252,71 @@ func (p *PDFParser) buildBookFromMarkdown(mdPath, srcPath string) (*model.Book, 
 	}, nil
 }
 
+// splitPDFMarkdown splits PDF markdown into chapters.
+// If it has <!-- Page N --> markers, groups pages into ~10-page chapters.
+// Otherwise falls back to heading-based splitting.
+func (p *PDFParser) splitPDFMarkdown(text, defaultTitle string) []model.Chapter {
+	// Check for page break markers from pdf-inspector
+	if strings.Contains(text, "<!-- Page ") {
+		pages := strings.Split(text, "<!-- Page ")
+		var merged []string
+		for _, page := range pages {
+			page = strings.TrimSpace(page)
+			if page == "" {
+				continue
+			}
+			// Remove trailing --> if present
+			if idx := strings.Index(page, "-->"); idx >= 0 {
+				page = page[idx+3:]
+			}
+			page = strings.TrimSpace(page)
+			if len(page) > 20 {
+				merged = append(merged, page)
+			}
+		}
+
+		// Group pages into chapters (~10 pages each)
+		pagesPerChapter := 10
+		var chapters []model.Chapter
+		for i := 0; i < len(merged); i += pagesPerChapter {
+			end := i + pagesPerChapter
+			if end > len(merged) {
+				end = len(merged)
+			}
+			chapters = append(chapters, model.Chapter{
+				Index:   len(chapters),
+				Title:   fmt.Sprintf("Chapter %d", len(chapters)+1),
+				Content: strings.TrimSpace(strings.Join(merged[i:end], "\n\n")),
+			})
+		}
+		if len(chapters) > 0 {
+			return chapters
+		}
+	}
+
+	// Fallback to heading-based splitting
+	chapters := splitByHeadings(text, defaultTitle)
+	if len(chapters) > 0 && len(chapters[0].Content) > 20 {
+		return chapters
+	}
+
+	// Last resort: single chapter
+	return []model.Chapter{{
+		Index:   0,
+		Title:   defaultTitle,
+		Content: strings.TrimSpace(text),
+	}}
+}
+
+// ========================
+// pdftotext fallback
+// ========================
+
 // parseSimple extracts text using pdftotext as fallback
 func (p *PDFParser) parseSimple(filePath string) (*model.Book, error) {
 	// Try pdftotext
 	if _, err := exec.LookPath("pdftotext"); err != nil {
-		return nil, fmt.Errorf("no PDF parser available (install pdftotext or opendataloader-pdf)")
+		return nil, fmt.Errorf("no PDF parser available (install pdf-inspector, opendataloader-pdf, or pdftotext)")
 	}
 
 	cmd := exec.Command("pdftotext", "-layout", filePath, "-")

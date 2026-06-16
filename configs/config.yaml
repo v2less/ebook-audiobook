@@ -27,6 +27,12 @@ synthesis:
   default_format: "mp3"
   sample_rate: 24000
 
+# PDF parsing (priority order: pdf-inspector > opendataloader-pdf > pdftotext)
+pdf:
+  inspector_enabled: true    # use pdf-inspector (pdf2md) for best quality text-based PDFs
+  odl_enabled: true          # fallback to opendataloader-pdf
+  pdftotext_enabled: true    # last resort plain text extraction
+
 # Library import
 library:
   project_path: "./初始音效工程文件【加载音效音色】.json"

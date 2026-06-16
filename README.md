@@ -21,15 +21,21 @@
 - Go 1.23+
 - Node.js 20+
 - FFmpeg
-- Python 3（opendataloader-pdf）
+- [pdf-inspector](https://github.com/firecrawl/pdf-inspector)（推荐，PDF→Markdown，<200ms）
+- Python 3（opendataloader-pdf，PDF 备选）
 - [epub2md](https://github.com/uxiew/epub2MD)（npm 全局，EPUB 解析）
 - [Calibre](https://calibre-ebook.com/)（可选，MOBI 转换）
 - [pandoc](https://pandoc.org/)（可选，DOCX 转换）
 
 安装工具：
 ```bash
+# PDF 解析（三选一，按优先级）:
+npm install -g @firecrawl/pdf-inspector   # 推荐：极速、表格/布局/连字符修复
+pip install opendataloader-pdf            # 备选：结构化 JSON
+apt install poppler-utils                 # 最后手段：pdftotext
+
+# EPUB 解析
 npm install -g epub2md
-pip install opendataloader-pdf
 ```
 
 ### 运行
@@ -82,6 +88,7 @@ llm:
 | `POST` | `/api/v1/books/upload` | 上传电子书 (自动格式检测) |
 | `GET` | `/api/v1/books` | 书籍列表 |
 | `DELETE` | `/api/v1/books/:id` | 删除书籍 |
+| `POST` | `/api/v1/pdf/classify` | PDF 分类检测 (text/scanned/mixed) |
 | `GET` | `/api/v1/voices/presets` | 预置音色列表 |
 | `POST` | `/api/v1/voices` | 创建自定义音色 (预设/克隆/设计) |
 | `POST` | `/api/v1/voices/:id/preview` | 音色试听 |
@@ -104,7 +111,7 @@ llm:
 | 输入格式 | 解析方式 |
 |---|---|
 | EPUB | epub2MD CLI（主）/ 纯 Go 降级 |
-| PDF | opendataloader-pdf JSON+Markdown（主）/ pdftotext 降级 |
+| PDF | pdf-inspector pdf2md（主 · <200ms · 表格/布局/连字符修复）<br>opendataloader-pdf（备 · 结构化 JSON+Markdown）<br>pdftotext（最后手段） |
 | TXT | Go 原生解析（按空行分章） |
 | Markdown | Go 原生解析（按 `#` 标题分章） |
 | MOBI/AZW/AZW3 | Calibre ebook-convert → EPUB / 纯 Go 降级 |
@@ -187,7 +194,7 @@ ebook-audiobook/
 │   │   ├── parser.go               # Parser 接口 + 文本清洗
 │   │   ├── registry.go             # 格式路由 + 自动检测
 │   │   ├── epub.go                 # EPUB 解析
-│   │   ├── pdf.go                  # PDF 解析 (opendataloader-pdf)
+│   │   ├── pdf.go                  # PDF 解析 (pdf-inspector > odl > pdftotext)
 │   │   ├── txt.go                  # TXT/Markdown 解析
 │   │   ├── docx.go                 # DOCX/DOC 解析 (★ 新增)
 │   │   └── parser_test.go          # 解析器测试

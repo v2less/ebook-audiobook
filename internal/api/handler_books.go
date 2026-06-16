@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"ebook-audiobook/internal/model"
+	"ebook-audiobook/internal/parser"
 )
 
 // ---- Book handlers ----
@@ -156,4 +157,50 @@ func isEPUB(path string) bool {
 	// EPUBs have "mimetypeapplication/epub+zip" at offset 30 in the ZIP local file header
 	// Simpler: check extension
 	return filepath.Ext(path) == ".epub"
+}
+
+// classifyPDF runs pdf-inspector classification on an uploaded PDF file
+func (s *Server) classifyPDF(w http.ResponseWriter, r *http.Request) {
+	// Parse multipart form
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("parse form: %w", err))
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("read file: %w", err))
+		return
+	}
+	defer file.Close()
+
+	// Save temporarily
+	tmpDir, err := os.MkdirTemp("", "pdf-classify-*")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+
+	tmpPath := filepath.Join(tmpDir, header.Filename)
+	dst, err := os.Create(tmpPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if _, err := io.Copy(dst, file); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	dst.Close()
+
+	// Run classification
+	pdfParser := parser.NewPDFParser()
+	classification, err := pdfParser.ClassifyPDF(tmpPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("classify PDF: %w", err))
+		return
+	}
+
+	writeJSON(w, classification)
 }
