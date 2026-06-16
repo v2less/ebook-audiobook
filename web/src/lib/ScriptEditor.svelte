@@ -170,21 +170,37 @@
     }
     generating = false
 
+    exportProgress = '正在准备音频数据...'
+    // Convert blob URLs to base64 for server-side mixing
+    const scriptData = []
+    for (let i = 0; i < script.length; i++) {
+      const s = script[i]
+      const entry = {
+        index: s.index || i,
+        type: s.type,
+        speaker: s.speaker,
+        text: s.text,
+        emotion: s.emotion,
+        sfx: s.sfx || [],
+      }
+      if (s.type === 'dialogue' && audioUrls[i]) {
+        try {
+          const resp = await fetch(audioUrls[i])
+          const blob = await resp.blob()
+          entry.audio_data = await blobToBase64(blob)
+        } catch(e) {
+          console.warn(`Failed to read audio for line ${i}:`, e)
+        }
+      }
+      scriptData.push(entry)
+    }
+
     exportProgress = '正在混合音频...'
     try {
-      const res = await api.post('/api/v1/synthesis/mix', {
-        script: script.map((s, i) => ({
-          index: s.index,
-          type: s.type,
-          speaker: s.speaker,
-          text: s.text,
-          audio_url: audioUrls[i] || '',
-          emotion: s.emotion,
-          sfx: s.sfx || [],
-        })),
+      const blob = await api.postMix('/api/v1/synthesis/mix', {
+        script: scriptData,
         format: 'wav',
       })
-      const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -195,6 +211,16 @@
     } catch (e) {
       exportProgress = '导出失败: ' + e.message
     }
+  }
+
+  // Convert Blob to base64 string
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result.split(',')[1])
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
   }
 
   const emotions = ['平静', '开心', '生气', '伤心', '害怕', '厌恶', '低落', '惊喜']

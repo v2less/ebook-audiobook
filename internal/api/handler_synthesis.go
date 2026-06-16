@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -55,13 +56,14 @@ func (s *Server) synthesizeSingle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) mixAudio(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Script []struct {
-			Index    int    `json:"index"`
-			Type     string `json:"type"`
-			Speaker  string `json:"speaker"`
-			Text     string `json:"text"`
-			AudioURL string `json:"audio_url"`
-			Emotion  string `json:"emotion"`
-			SFX      []struct {
+			Index     int    `json:"index"`
+			Type      string `json:"type"`
+			Speaker   string `json:"speaker"`
+			Text      string `json:"text"`
+			AudioURL  string `json:"audio_url"`
+			AudioData string `json:"audio_data"` // base64-encoded audio (preferred over audio_url)
+			Emotion   string `json:"emotion"`
+			SFX       []struct {
 				Keyword  string  `json:"keyword"`
 				Name     string  `json:"name"`
 				Position float64 `json:"position"`
@@ -78,7 +80,6 @@ func (s *Server) mixAudio(w http.ResponseWriter, r *http.Request) {
 		req.Format = "wav"
 	}
 
-	// Download all audio URLs, build concat list
 	tmpDir, err := os.MkdirTemp("", "mix-*")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -88,28 +89,46 @@ func (s *Server) mixAudio(w http.ResponseWriter, r *http.Request) {
 
 	var ffmpegInputs []string
 	var filterParts []string
+	inputIdx := 0
+
 	for i, seg := range req.Script {
-		if seg.Type != "dialogue" || seg.AudioURL == "" {
+		if seg.Type != "dialogue" {
 			continue
 		}
-		// Fetch audio from URL
-		resp, err := http.Get(seg.AudioURL)
-		if err != nil {
-			continue
-		}
+
 		fpath := filepath.Join(tmpDir, fmt.Sprintf("seg_%04d.wav", i))
-		f, _ := os.Create(fpath)
-		io.Copy(f, resp.Body)
-		f.Close()
-		resp.Body.Close()
+
+		// Try base64 audio_data first (browser-friendly)
+		if seg.AudioData != "" {
+			audioBytes, err := base64.StdEncoding.DecodeString(seg.AudioData)
+			if err != nil {
+				continue // skip corrupted data
+			}
+			if err := os.WriteFile(fpath, audioBytes, 0644); err != nil {
+				continue
+			}
+		} else if seg.AudioURL != "" {
+			// Fallback: try fetching from URL (for backward compatibility)
+			resp, err := http.Get(seg.AudioURL)
+			if err != nil {
+				continue
+			}
+			f, _ := os.Create(fpath)
+			io.Copy(f, resp.Body)
+			f.Close()
+			resp.Body.Close()
+		} else {
+			continue // no audio data
+		}
 
 		ffmpegInputs = append(ffmpegInputs, "-i", fpath)
-		filterParts = append(filterParts, fmt.Sprintf("[%d:a]", len(ffmpegInputs)/3-1))
+		filterParts = append(filterParts, fmt.Sprintf("[%d:a]", inputIdx))
+		inputIdx++
 	}
 
 	// Build concat filter
 	if len(filterParts) == 0 {
-		writeError(w, http.StatusBadRequest, fmt.Errorf("no valid audio segments"))
+		writeError(w, http.StatusBadRequest, fmt.Errorf("no valid audio segments — ensure each line has generated audio"))
 		return
 	}
 	concatFilter := strings.Join(filterParts, "") +
@@ -125,5 +144,6 @@ func (s *Server) mixAudio(w http.ResponseWriter, r *http.Request) {
 
 	data, _ := os.ReadFile(outputPath)
 	w.Header().Set("Content-Type", "audio/"+req.Format)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"audiobook.%s\"", req.Format))
 	w.Write(data)
 }

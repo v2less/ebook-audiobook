@@ -115,4 +115,22 @@ export const api = {
     }
     return res.blob()
   },
+
+  async postMix(path, body) {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(extractError(body) || res.statusText)
+    }
+    // Returns audio blob directly
+    const contentType = res.headers.get('Content-Type') || ''
+    if (contentType.includes('json')) {
+      throw new Error((await res.json()).error?.message || 'Mix failed')
+    }
+    return res.blob()
+  },
 }
