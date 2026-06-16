@@ -110,3 +110,46 @@ func TestTextSplitter(t *testing.T) {
 	// Note: TextSplitter is in tts package, test there
 	t.Skip("TextSplitter is in tts package")
 }
+
+func TestFixPDFSpacing(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "joins spaced Chinese characters",
+			input: "古 兰 经 故 事",
+			want:  "古兰经故事",
+		},
+		{
+			name:  "preserves English spaces",
+			input: "Hello World 中文 测试",
+			want:  "Hello World 中文测试",
+		},
+		{
+			name:  "handles mixed content",
+			input: "阿 丹 与 好 娃 的 故 事 Adam and Eve",
+			want:  "阿丹与好娃的故事 Adam and Eve",
+		},
+		{
+			name:  "no change for normal text",
+			input: "正常的中文文本不需要修改",
+			want:  "正常的中文文本不需要修改",
+		},
+		{
+			name:  "handles newlines between CJK",
+			input: "故\n事",
+			want:  "故事",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fixPDFSpacing(tt.input)
+			if got != tt.want {
+				t.Errorf("fixPDFSpacing() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

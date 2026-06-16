@@ -2,6 +2,7 @@ package parser
 
 import (
 	"ebook-audiobook/internal/model"
+	"regexp"
 )
 
 // Parser 电子书解析器接口
@@ -23,8 +24,22 @@ func NewCleaner() *ChapterCleaner {
 // Clean 清洗章节内容
 func (c *ChapterCleaner) Clean(chapter *model.Chapter) *model.Chapter {
 	cleaned := *chapter
-	cleaned.Content = cleanText(chapter.Content)
+	cleaned.Content = fixPDFSpacing(chapter.Content)
+	cleaned.Content = cleanText(cleaned.Content)
 	return &cleaned
+}
+
+// fixPDFSpacing fixes common PDF extraction issues:
+// - Chinese characters separated by spaces (古 兰 经 → 古兰经)
+func fixPDFSpacing(text string) string {
+	// Go's regexp (RE2) doesn't support \p{Han}, use Unicode range explicitly
+	// CJK Unified Ideographs: U+4E00-U+9FFF
+	// CJK Extension A: U+3400-U+4DBF
+	cjkRe := regexp.MustCompile(`([\x{4e00}-\x{9fff}\x{3400}-\x{4dbf}\x{f900}-\x{faff}])\s+([\x{4e00}-\x{9fff}\x{3400}-\x{4dbf}\x{f900}-\x{faff}])`)
+	for cjkRe.MatchString(text) {
+		text = cjkRe.ReplaceAllString(text, "$1$2")
+	}
+	return text
 }
 
 // cleanText 清洗文本：去除多余空白、统一换行

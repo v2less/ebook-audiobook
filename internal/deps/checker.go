@@ -36,7 +36,13 @@ var Tools = []Tool{
 		Install: installCommands("ffmpeg"),
 	},
 	{
-		Name: "pdf-inspector", Bin: "pdf2md", Required: false,
+		Name: "pdf-inspector", Bin: "pdf-inspector", Required: false,
+		AltBins: []string{
+			"pdf-inspector",
+			"pdf2md", // older versions / Rust binary
+			expandHome("~/.local/bin/pdf-inspector"),
+			"/usr/local/bin/pdf-inspector",
+		},
 		Install: []string{"npm install -g @firecrawl/pdf-inspector"},
 	},
 	{

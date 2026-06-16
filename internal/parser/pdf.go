@@ -12,7 +12,7 @@ import (
 )
 
 // PDFParser 解析 PDF 文件。
-// 解析优先级：pdf-inspector (pdf2md) > opendataloader-pdf > pdftotext
+// 解析优先级：pdf-inspector > opendataloader-pdf > pdftotext
 type PDFParser struct{}
 
 func NewPDFParser() *PDFParser {
@@ -47,22 +47,34 @@ func (p *PDFParser) Parse(filePath string) (*model.Book, error) {
 	return p.parseSimple(filePath)
 }
 
-// ClassifyPDF runs pdf-inspector's detect-pdf to determine if a PDF is scannable
+// ClassifyPDF runs pdf-inspector's detect to determine PDF type
 func (p *PDFParser) ClassifyPDF(filePath string) (*PDFClassification, error) {
-	if _, err := exec.LookPath("detect-pdf"); err != nil {
-		return nil, fmt.Errorf("detect-pdf not available (install pdf-inspector)")
+	// Try pdf-inspector detect, then detect-pdf (older name)
+	bin := "pdf-inspector"
+	if _, err := exec.LookPath(bin); err != nil {
+		bin = "detect-pdf"
+		if _, err := exec.LookPath(bin); err != nil {
+			return nil, fmt.Errorf("pdf-inspector not available (install @firecrawl/pdf-inspector)")
+		}
 	}
 
 	absPath, _ := filepath.Abs(filePath)
-	cmd := exec.Command("detect-pdf", absPath, "--json")
+
+	var cmd *exec.Cmd
+	if bin == "detect-pdf" {
+		cmd = exec.Command(bin, absPath, "--json")
+	} else {
+		cmd = exec.Command(bin, "detect", absPath, "--json")
+	}
+
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("detect-pdf: %w", err)
+		return nil, fmt.Errorf("detect: %w", err)
 	}
 
 	var result PDFClassification
 	if err := json.Unmarshal(out, &result); err != nil {
-		return nil, fmt.Errorf("parse detect-pdf output: %w", err)
+		return nil, fmt.Errorf("parse detect output: %w", err)
 	}
 	return &result, nil
 }
@@ -72,8 +84,13 @@ func (p *PDFParser) ClassifyPDF(filePath string) (*PDFClassification, error) {
 // ========================
 
 func (p *PDFParser) parseViaPdfInspector(filePath string) (*model.Book, error) {
-	if _, err := exec.LookPath("pdf2md"); err != nil {
-		return nil, fmt.Errorf("pdf2md not available: %w", err)
+	// Try pdf-inspector first, then pdf2md (older CLI name)
+	bin := "pdf-inspector"
+	if _, err := exec.LookPath(bin); err != nil {
+		bin = "pdf2md"
+		if _, err := exec.LookPath(bin); err != nil {
+			return nil, fmt.Errorf("pdf-inspector not available (install @firecrawl/pdf-inspector)")
+		}
 	}
 
 	tmpDir, err := os.MkdirTemp("", "pdf-inspector-*")
@@ -85,10 +102,10 @@ func (p *PDFParser) parseViaPdfInspector(filePath string) (*model.Book, error) {
 	absPath, _ := filepath.Abs(filePath)
 	mdPath := filepath.Join(tmpDir, "output.md")
 
-	// pdf2md with page breaks for better chapter segmentation
-	cmd := exec.Command("pdf2md", absPath, "--pages", "--raw", "-o", mdPath)
+	// pdf-inspector with --json flag for structured output
+	cmd := exec.Command(bin, absPath, "--json", "-o", mdPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("pdf2md failed: %s: %w", string(out), err)
+		return nil, fmt.Errorf("%s failed: %s: %w", bin, string(out), err)
 	}
 
 	return p.buildBookFromMarkdown(mdPath, filePath)
@@ -154,6 +171,7 @@ type odlElement struct {
 
 type odlOutput struct {
 	Elements []odlElement `json:"elements"`
+	Kids     []odlElement `json:"kids"` // opendataloader-pdf uses "kids" in newer versions
 	Pages    []struct {
 		PageNumber int    `json:"page_number"`
 		Text       string `json:"text"`
@@ -174,6 +192,11 @@ func (p *PDFParser) buildBookFromODLJSON(jsonPath, srcPath string) (*model.Book,
 			return nil, fmt.Errorf("parse opendataloader JSON: %w", err)
 		}
 		output.Elements = elements
+	}
+
+	// Merge kids into elements (opendataloader-pdf uses "kids" key)
+	if len(output.Kids) > 0 && len(output.Elements) == 0 {
+		output.Elements = output.Kids
 	}
 
 	book := &model.Book{
@@ -231,7 +254,8 @@ func (p *PDFParser) buildBookFromODLJSON(jsonPath, srcPath string) (*model.Book,
 	return book, nil
 }
 
-// buildBookFromMarkdown creates a Book from Markdown output (shared by pdf-inspector and opendataloader-pdf)
+// buildBookFromMarkdown creates a Book from Markdown output.
+// Handles both plain markdown and pdf-inspector JSON-wrapped output.
 func (p *PDFParser) buildBookFromMarkdown(mdPath, srcPath string) (*model.Book, error) {
 	data, err := os.ReadFile(mdPath)
 	if err != nil {
@@ -239,9 +263,20 @@ func (p *PDFParser) buildBookFromMarkdown(mdPath, srcPath string) (*model.Book, 
 	}
 
 	text := string(data)
-	title := strings.TrimSuffix(filepath.Base(srcPath), ".pdf")
 
-	// Split by <!-- Page N --> markers (pdf-inspector --pages flag) or by # headings
+	// pdf-inspector --json wraps markdown in a JSON object
+	// Try to extract the "markdown" field from JSON wrapper
+	if strings.HasPrefix(text, "{") {
+		var wrapper struct {
+			Markdown string `json:"markdown"`
+			PDFType  string `json:"pdf_type"`
+		}
+		if err := json.Unmarshal(data, &wrapper); err == nil && wrapper.Markdown != "" {
+			text = wrapper.Markdown
+		}
+	}
+
+	title := strings.TrimSuffix(filepath.Base(srcPath), ".pdf")
 	chapters := p.splitPDFMarkdown(text, title)
 	return &model.Book{
 		Title:    title,
