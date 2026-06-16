@@ -1,0 +1,12 @@
+# Air configuration for Go hot-reload
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/server ./cmd/server"
+  bin = "./tmp/server"
+  include_ext = ["go", "tmpl", "html"]
+  exclude_dir = ["tmp", "data", "web", ".git", "node_modules"]
+
+[log]
+  time = true

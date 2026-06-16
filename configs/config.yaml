@@ -1,0 +1,39 @@
+# Server
+server:
+  port: 8080
+  host: "0.0.0.0"
+
+# Storage
+storage:
+  upload_dir: "./data/uploads"
+  output_dir: "./data/output"
+  db_path: "./data/audiobook.db"
+
+# MiMo TTS API
+mimo:
+  api_key: ""    # set via environment: MIMO_API_KEY
+  base_url: "https://api.xiaomimimo.com/v1"
+
+# Real-Time-Voice-Cloning (local fallback)
+rtvc:
+  python_path: "python3"
+  project_dir: "./rtvc/Real-Time-Voice-Cloning"
+  enabled: false
+
+# Synthesis settings
+synthesis:
+  max_concurrency: 2
+  chapter_gap: 1.5     # seconds between chapters
+  default_format: "mp3"
+  sample_rate: 24000
+
+# Library import
+library:
+  project_path: "./初始音效工程文件【加载音效音色】.json"
+
+# LLM configuration
+llm:
+  base_url: "https://api.openai.com/v1"
+  api_key: ""          # set via environment: LLM_API_KEY
+  model: "gpt-4o-mini"
+  timeout: 120         # seconds

@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+.github
+
+# Build outputs
+bin/
+web/dist/
+web/node_modules/
+
+# Data
+data/uploads/*
+data/output/*
+data/*.db
+!data/.gitkeep
+
+# Config
+.env
+configs/config.local.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests
+coverage.out
+*.test
+
+# Temp
+tmp/
+*.tmp

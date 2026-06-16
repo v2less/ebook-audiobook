@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  audiobook-factory:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./configs:/app/configs
+    environment:
+      - MIMO_API_KEY=${MIMO_API_KEY:-}
+      - CONFIG_PATH=/app/configs
+    restart: unless-stopped
+
+  # Optional: RTVC service (uncomment if using local voice cloning)
+  # rtvc:
+  #   image: python:3.11-slim
+  #   working_dir: /app
+  #   volumes:
+  #     - ./rtvc/Real-Time-Voice-Cloning:/app
+  #   command: python demo_cli.py

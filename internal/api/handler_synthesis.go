@@ -1,0 +1,129 @@
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"ebook-audiobook/internal/model"
+)
+
+// ---- Quick Synthesis handlers ----
+
+func (s *Server) synthesizeSingle(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Text        string `json:"text"`
+		VoiceID     string `json:"voice_id"`
+		EmotionHint string `json:"emotion_hint"`
+		Format      string `json:"format"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Format == "" {
+		req.Format = "wav"
+	}
+	if req.VoiceID == "" {
+		req.VoiceID = "mimo_default"
+	}
+
+	vp := &model.VoiceProfile{ID: req.VoiceID, Engine: "mimo", Source: "preset", VoiceID: req.VoiceID}
+	// Try DB first
+	if dbVp, err := s.store.GetVoiceProfile(req.VoiceID); err == nil {
+		vp = dbVp
+	}
+	opts := model.TTSOptions{
+		VoiceID:        req.VoiceID,
+		Format:         req.Format,
+		StyleDirective: req.EmotionHint,
+	}
+	audio, format, err := s.engineReg.SynthesizeWithEngine(r.Context(), req.Text, vp, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.Header().Set("Content-Type", "audio/"+format)
+	w.Write(audio)
+}
+
+func (s *Server) mixAudio(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Script []struct {
+			Index    int    `json:"index"`
+			Type     string `json:"type"`
+			Speaker  string `json:"speaker"`
+			Text     string `json:"text"`
+			AudioURL string `json:"audio_url"`
+			Emotion  string `json:"emotion"`
+			SFX      []struct {
+				Keyword  string  `json:"keyword"`
+				Name     string  `json:"name"`
+				Position float64 `json:"position"`
+			} `json:"sfx"`
+		} `json:"script"`
+		Format string `json:"format"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if req.Format == "" {
+		req.Format = "wav"
+	}
+
+	// Download all audio URLs, build concat list
+	tmpDir, err := os.MkdirTemp("", "mix-*")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+
+	var ffmpegInputs []string
+	var filterParts []string
+	for i, seg := range req.Script {
+		if seg.Type != "dialogue" || seg.AudioURL == "" {
+			continue
+		}
+		// Fetch audio from URL
+		resp, err := http.Get(seg.AudioURL)
+		if err != nil {
+			continue
+		}
+		fpath := filepath.Join(tmpDir, fmt.Sprintf("seg_%04d.wav", i))
+		f, _ := os.Create(fpath)
+		io.Copy(f, resp.Body)
+		f.Close()
+		resp.Body.Close()
+
+		ffmpegInputs = append(ffmpegInputs, "-i", fpath)
+		filterParts = append(filterParts, fmt.Sprintf("[%d:a]", len(ffmpegInputs)/3-1))
+	}
+
+	// Build concat filter
+	if len(filterParts) == 0 {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("no valid audio segments"))
+		return
+	}
+	concatFilter := strings.Join(filterParts, "") +
+		fmt.Sprintf("concat=n=%d:v=0:a=1[out]", len(filterParts))
+
+	outputPath := filepath.Join(tmpDir, "output."+req.Format)
+	args := append(ffmpegInputs, "-filter_complex", concatFilter, "-map", "[out]", "-y", outputPath)
+	cmd := exec.Command("ffmpeg", args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("ffmpeg: %s", string(out)))
+		return
+	}
+
+	data, _ := os.ReadFile(outputPath)
+	w.Header().Set("Content-Type", "audio/"+req.Format)
+	w.Write(data)
+}

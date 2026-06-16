@@ -1,0 +1,36 @@
+# Binaries
+bin/
+tmp/
+*.exe
+
+# Data
+# Unitale project files (large)
+初始音效工程文件*.json
+data/
+
+# Frontend
+web/dist/
+web/node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# RTVC (optional local voice cloning)
+rtvc/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.json project files
+architecture-review.html
