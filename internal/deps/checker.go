@@ -12,10 +12,11 @@ import (
 
 // Tool defines an external dependency with install instructions
 type Tool struct {
-	Name     string   // display name
-	Bin      string   // binary to check via exec.LookPath
-	Required bool     // if true, startup will fail without it
-	Install  []string // auto-install commands (first successful one wins)
+	Name      string   // display name
+	Bin       string   // binary to check via exec.LookPath
+	AltBins   []string // alternative binary names or full paths
+	Required  bool     // if true, startup will fail without it
+	Install   []string // auto-install commands (first successful one wins)
 }
 
 // Status represents the availability of a tool
@@ -51,7 +52,13 @@ var Tools = []Tool{
 		Install: installCommands("pandoc"),
 	},
 	{
-		Name: "Calibre (ebook-convert)", Bin: "ebook-convert", Required: false,
+		Name: "Calibre", Bin: "ebook-convert", Required: false,
+		AltBins: []string{
+			"ebook-convert",
+			"/usr/bin/ebook-convert",
+			"/opt/calibre/ebook-convert",
+			"/Applications/calibre.app/Contents/MacOS/ebook-convert",
+		},
 		Install: installCommands("calibre"),
 	},
 	{
@@ -110,11 +117,32 @@ func CheckAll(autoInstall bool) *CheckResult {
 func checkOne(tool Tool, autoInstall bool) Status {
 	status := Status{Name: tool.Name, Bin: tool.Bin}
 
-	path, err := exec.LookPath(tool.Bin)
-	if err == nil {
-		status.Available = true
-		status.Path = path
-		return status
+	// Try primary binary first, then alternatives
+	bins := append([]string{tool.Bin}, tool.AltBins...)
+	var lastErr error
+	lastBin := tool.Bin
+	for _, bin := range bins {
+		path, err := exec.LookPath(bin)
+		if err == nil {
+			status.Available = true
+			status.Path = path
+			if bin != tool.Bin {
+				status.Bin = bin
+			}
+			return status
+		}
+		lastErr = err
+		lastBin = bin
+		// Also check absolute paths if given
+		if strings.Contains(bin, "/") {
+			if _, err := os.Stat(bin); err == nil {
+				status.Available = true
+				status.Path = bin
+				status.Bin = bin
+				return status
+			}
+			lastErr = err
+		}
 	}
 
 	// Not found — try auto-install
@@ -144,7 +172,7 @@ func checkOne(tool Tool, autoInstall bool) Status {
 		}
 	}
 
-	status.Error = fmt.Sprintf("%s not found: %v", tool.Bin, err)
+	status.Error = fmt.Sprintf("%s not found: %v", lastBin, lastErr)
 	if !tool.Required {
 		status.Error += " (optional, some features will use fallbacks)"
 	}
