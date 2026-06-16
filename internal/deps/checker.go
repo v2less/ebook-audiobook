@@ -45,7 +45,12 @@ var Tools = []Tool{
 	},
 	{
 		Name: "opendataloader-pdf", Bin: "opendataloader-pdf", Required: false,
-		Install: []string{"pip install opendataloader-pdf", "pip3 install opendataloader-pdf"},
+		AltBins: []string{
+			"opendataloader-pdf",
+			expandHome("~/.local/bin/opendataloader-pdf"),
+			"/usr/local/bin/opendataloader-pdf",
+		},
+		Install: []string{"pip install -U opendataloader-pdf", "pip3 install -U opendataloader-pdf"},
 	},
 	{
 		Name: "Pandoc", Bin: "pandoc", Required: false,
@@ -93,6 +98,9 @@ type CheckResult struct {
 // CheckAll checks all tools and returns their status.
 // If autoInstall is true, tries to install missing tools.
 func CheckAll(autoInstall bool) *CheckResult {
+	// Ensure common user-local bin dirs are in PATH
+	ensurePath()
+
 	result := &CheckResult{AllAvailable: true}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -112,6 +120,39 @@ func CheckAll(autoInstall bool) *CheckResult {
 	}
 	wg.Wait()
 	return result
+}
+
+// ensurePath adds common user-local binary directories to PATH
+func ensurePath() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	extras := []string{
+		home + "/.local/bin",
+		home + "/.npm-global/bin",
+		home + "/bin",
+		"/usr/local/bin",
+	}
+	path := os.Getenv("PATH")
+	for _, dir := range extras {
+		if !strings.Contains(path, dir) {
+			path = dir + ":" + path
+		}
+	}
+	os.Setenv("PATH", path)
+}
+
+// expandHome replaces ~ with the user's home directory
+func expandHome(path string) string {
+	if !strings.HasPrefix(path, "~/") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	return home + path[1:]
 }
 
 func checkOne(tool Tool, autoInstall bool) Status {
