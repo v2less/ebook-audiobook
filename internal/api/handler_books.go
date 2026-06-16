@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"ebook-audiobook/internal/deps"
 	"ebook-audiobook/internal/model"
 	"ebook-audiobook/internal/parser"
 )
@@ -203,4 +205,14 @@ func (s *Server) classifyPDF(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, classification)
+}
+
+// healthReady checks all dependency status for readiness probes
+func (s *Server) healthReady(w http.ResponseWriter, r *http.Request) {
+	result := deps.CheckAll(false) // don't auto-install on health check
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"status":       "ok",
+		"dependencies": result,
+	})
 }

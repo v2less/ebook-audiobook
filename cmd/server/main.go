@@ -16,6 +16,7 @@ import (
 	"ebook-audiobook/internal/ai"
 	"ebook-audiobook/internal/api"
 	"ebook-audiobook/internal/config"
+	"ebook-audiobook/internal/deps"
 	"ebook-audiobook/internal/llm"
 	"ebook-audiobook/internal/model"
 	"ebook-audiobook/internal/parser"
@@ -75,6 +76,19 @@ func main() {
 	}
 	for _, dir := range []string{cfg.Storage.UploadDir, cfg.Storage.OutputDir, filepath.Dir(cfg.Storage.DBPath)} {
 		os.MkdirAll(dir, 0755)
+	}
+
+	// Auto-install dependencies on startup
+	autoInstall := os.Getenv("AUTO_INSTALL") != "0" // enabled by default, set AUTO_INSTALL=0 to disable
+	log.Println("🔍 Checking dependencies...")
+	result := deps.CheckAll(autoInstall)
+	deps.LogReport(result)
+	if !result.AllAvailable {
+		if autoInstall {
+			log.Println("⚠️  Some required tools could not be auto-installed. Install them manually.")
+		} else {
+			log.Println("💡 Set AUTO_INSTALL=1 to auto-install missing tools on startup.")
+		}
 	}
 
 	store, err := storage.New(cfg.Storage.DBPath)

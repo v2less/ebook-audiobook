@@ -30,6 +30,9 @@ func (s *Server) setupRouter() {
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
+	// Readiness check (includes dependency status)
+	r.Get("/health/ready", s.healthReady)
+
 	// Direct import endpoint (from configured path)
 	r.Get("/import-now", s.directImportNow)
 
