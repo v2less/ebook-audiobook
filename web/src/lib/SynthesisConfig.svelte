@@ -2,11 +2,12 @@
   import { api } from './api.js'
   import ScriptEditor from './ScriptEditor.svelte'
 
-  let { book, selectedVoice } = $props()
+  let { book, selectedVoice, isActive = true } = $props()
 
   let books = $state([])
   let voices = $state([])
   let selectedBookId = $state(book?.id || '')
+  let selectedChapterIdx = $state(0)
   let selectedVoiceId = $state(selectedVoice?.id || 'mimo_default')
   let outputFormat = $state('mp3')
   let chapterGap = $state(1.5)
@@ -31,11 +32,32 @@
   loadData()
 
   $effect(() => {
-    if (book?.id) selectedBookId = book.id
+    if (book?.id) {
+      if (selectedBookId !== book.id) selectedChapterIdx = 0
+      selectedBookId = book.id
+    }
     if (selectedVoice?.id) selectedVoiceId = selectedVoice.id
   })
 
   const selectedBook = $derived(books.find(b => b.id === selectedBookId))
+
+  $effect(() => {
+    // Reset chapter index when book changes in dropdown
+    if (selectedBookId) {
+       // Keep reactivity clean, just ensure selectedChapterIdx is valid
+       if (selectedBook && selectedBook.chapters && selectedChapterIdx >= selectedBook.chapters.length) {
+         selectedChapterIdx = 0
+       }
+    }
+  })
+
+  let wasActive = $state(false)
+  $effect(() => {
+    if (isActive && !wasActive) {
+      loadData()
+    }
+    wasActive = isActive
+  })
 
   async function startSynthesis() {
     if (!selectedBookId) { error = '请选择一本书'; return }
@@ -72,7 +94,7 @@
     error = ''
     analysis = null
     try {
-      const rawText = (selectedBook?.chapters?.[0]?.content || '').slice(0, 5000)
+      const rawText = (selectedBook?.chapters?.[selectedChapterIdx]?.content || '').slice(0, 15000)
       if (!rawText.trim()) throw new Error('No text content in book. The parser may have failed to extract text.')
 
       // Warn if text looks garbled
@@ -127,10 +149,18 @@
       if (!Array.isArray(arr)) {
         const start = text.indexOf('[')
         if (start < 0) throw new Error('No JSON array. Raw: ' + text.slice(0, 300))
-        let depth = 0, end = -1
+        let depth = 0, end = -1, inStr = false
         for (let i = start; i < text.length; i++) {
-          if (text[i] === '[') depth++
-          else if (text[i] === ']') { depth--; if (depth === 0) { end = i; break } }
+          const ch = text[i]
+          if (inStr) {
+            // Skip escaped characters inside strings (e.g. \", \\, \n)
+            if (ch === '\\') { i++; continue }
+            if (ch === '"') inStr = false
+            continue
+          }
+          if (ch === '"') { inStr = true; continue }
+          if (ch === '[') depth++
+          else if (ch === ']') { depth--; if (depth === 0) { end = i; break } }
         }
         if (end < 0) throw new Error('Unclosed bracket. Raw: ' + text.slice(0, 300))
         try { arr = JSON.parse(fixJson(text.slice(start, end + 1))) }
@@ -145,7 +175,7 @@
         const name = item.role_name
         if (name && name !== '旁白' && !seen.has(name)) {
           seen.add(name)
-          chars.push({ name, role: 'supporting', voice_design: '', gender: '', age: '', personality: '' })
+          chars.push({ name, role: 'supporting', voice_design: '', gender: '', age: '', personality: '', voice_id: '' })
         }
       })
 
@@ -193,6 +223,15 @@
     </label>
 
     {#if selectedBook}
+      <label>
+        <span>选择分析章节</span>
+        <select bind:value={selectedChapterIdx}>
+          {#each selectedBook.chapters || [] as c, i}
+            <option value={i}>{c.title} ({c.content?.length || 0} 字)</option>
+          {/each}
+        </select>
+      </label>
+
       <div class="book-summary">
         <strong>{selectedBook.title}</strong>
         <p>{selectedBook.author} · {selectedBook.format} · {selectedBook.chapters?.length || 0} 章</p>
@@ -244,12 +283,23 @@
         {#if analysis.characters?.length}
           <div class="chars">
             {#each analysis.characters as c}
-              <div class="char-chip">{c.name} ({c.role}): {c.voice_design?.slice(0, 60)}...</div>
+              <div class="char-card">
+                <div class="char-header">
+                  <strong>{c.name}</strong> <span class="char-role">({c.role})</span>
+                </div>
+                <div class="char-desc" title={c.voice_design}>{c.voice_design?.slice(0, 40)}...</div>
+                <select bind:value={c.voice_id}>
+                  <option value="">-- 跟随默认音色 --</option>
+                  {#each voices as v}
+                    <option value={v.id}>{v.name}</option>
+                  {/each}
+                </select>
+              </div>
             {/each}
           </div>
         {/if}
       </div>
-      <ScriptEditor script={analysis.script || []} characters={analysis.characters || []} />
+      <ScriptEditor script={analysis.script || []} characters={analysis.characters || []} voices={voices} defaultVoiceId={selectedVoiceId} />
     {/if}
   </div>
 </div>
@@ -267,26 +317,26 @@
   }
   label span {
     font-size: 0.85rem;
-    color: #aaa;
+    color: var(--text-secondary);
     font-weight: 500;
   }
   select, input, textarea {
     padding: 10px 14px;
-    background: #252540;
-    border: 1px solid #3a3a5a;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    color: #e0e0e0;
+    color: var(--text-primary);
     font-size: 0.9rem;
   }
   textarea { resize: vertical; }
   .book-summary {
     padding: 12px 16px;
-    background: #252540;
+    background: var(--bg-card);
     border-radius: 10px;
-    border: 1px solid #2a2a3a;
+    border: 1px solid var(--border-color);
   }
   .book-summary strong { display: block; }
-  .book-summary p { color: #888; font-size: 0.85rem; margin-top: 4px; }
+  .book-summary p { color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px; }
   .submit {
     padding: 14px;
     background: linear-gradient(135deg, #667eea, #764ba2);
@@ -313,34 +363,39 @@
   .analysis-result {
     margin-top: 16px;
     padding: 16px;
-    background: #252540;
+    background: var(--bg-card);
     border-radius: 10px;
-    border: 1px solid #667eea;
+    border: 1px solid var(--accent-start);
   }
-  .analysis-result h3 { color: #667eea; margin-bottom: 8px; }
-  .chars { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-  .char-chip {
-    padding: 6px 12px;
-    background: #1a1a2e;
-    border-radius: 6px;
-    font-size: 0.8rem;
-    color: #ccc;
-    max-width: 300px;
+  .analysis-result h3 { color: var(--accent-start); margin-bottom: 8px; }
+  .chars { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 10px; }
+  .char-card {
+    padding: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
+  .char-header strong { color: var(--text-primary); }
+  .char-role { color: var(--text-secondary); font-size: 0.8rem; }
+  .char-desc { font-size: 0.8rem; color: var(--text-muted); }
+  .char-card select { padding: 6px; font-size: 0.85rem; }
   .error {
     padding: 10px;
-    background: rgba(255,100,100,0.1);
-    border: 1px solid #f55;
+    background: rgba(255,71,87,0.1);
+    border: 1px solid var(--danger);
     border-radius: 8px;
-    color: #f88;
+    color: var(--danger);
     margin-bottom: 16px;
   }
   .success {
     padding: 10px;
-    background: rgba(100,255,100,0.1);
-    border: 1px solid #4a4;
+    background: rgba(46,213,115,0.1);
+    border: 1px solid var(--success);
     border-radius: 8px;
-    color: #8f8;
+    color: var(--success);
     margin-bottom: 16px;
   }
 </style>

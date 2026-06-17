@@ -30,6 +30,7 @@ type customTTSInfo struct {
 	URL        string `json:"url"`
 	KeySet     bool   `json:"key_set"`
 	KeyMask    string `json:"key_mask"`
+	RawKey     string `json:"-"`
 	Model      string `json:"model"`
 	Voices     string `json:"voices"`
 }
@@ -115,6 +116,7 @@ func (s *Server) lookupCustomTTSInfo(name string) customTTSInfo {
 				URL:     c.URL,
 				KeySet:  c.Key != "",
 				KeyMask: maskKey(c.Key),
+				RawKey:  c.Key,
 				Model:   c.Model,
 				Voices:  c.Voices,
 			}
@@ -240,6 +242,7 @@ func (s *Server) persistSettings(req struct {
 			cfg["url"] = existing.URL
 			cfg["model"] = existing.Model
 			cfg["voices"] = existing.Voices
+			cfg["key"] = existing.RawKey
 			// Don't overwrite key with empty — keep existing if not being updated
 		}
 		customTTS = append(customTTS, cfg)

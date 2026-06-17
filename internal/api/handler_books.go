@@ -40,11 +40,46 @@ func (s *Server) getBook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteBook(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.DeleteBook(chi.URLParam(r, "id")); err != nil {
+	id := chi.URLParam(r, "id")
+	book, _ := s.store.GetBook(id)
+	if err := s.store.DeleteBook(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	if book != nil && book.FileName != "" {
+		os.Remove(filepath.Join(s.cfg.Storage.UploadDir, book.FileName))
+	}
 	writeJSON(w, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) updateBookChapters(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	book, err := s.store.GetBook(id)
+	if err != nil || book == nil {
+		writeError(w, http.StatusNotFound, fmt.Errorf("book not found"))
+		return
+	}
+
+	var req struct {
+		Chapters []model.Chapter `json:"chapters"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid json: %w", err))
+		return
+	}
+
+	book.Chapters = req.Chapters
+
+	// Ensure chapter indexes are sequential
+	for i := range book.Chapters {
+		book.Chapters[i].Index = i
+	}
+
+	if err := s.store.SaveBook(book); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, book)
 }
 
 func (s *Server) uploadBook(w http.ResponseWriter, r *http.Request) {

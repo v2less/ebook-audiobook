@@ -118,28 +118,28 @@
   .refresh {
     padding: 6px 14px;
     background: transparent;
-    border: 1px solid #3a3a5a;
-    color: #aaa;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
     border-radius: 8px;
     cursor: pointer;
     font-size: 0.85rem;
   }
   .polling-hint {
     font-size: 0.75rem;
-    color: #667eea;
+    color: var(--accent-start);
     margin-bottom: 12px;
   }
   .empty {
     text-align: center;
     padding: 48px 24px;
-    color: #888;
+    color: var(--text-secondary);
   }
   .empty p { font-size: 1.1rem; margin-bottom: 6px; }
   .job-card {
     padding: 16px;
-    background: #252540;
+    background: var(--bg-card);
     border-radius: 10px;
-    border: 1px solid #2a2a3a;
+    border: 1px solid var(--border-color);
     margin-bottom: 12px;
   }
   .job-header {
@@ -148,11 +148,11 @@
     align-items: center;
     margin-bottom: 8px;
   }
-  .job-id { font-size: 0.75rem; color: #666; font-family: monospace; }
+  .job-id { font-size: 0.75rem; color: var(--text-muted); font-family: monospace; }
   .job-meta {
     display: flex;
     gap: 16px;
-    color: #888;
+    color: var(--text-secondary);
     font-size: 0.8rem;
     margin-bottom: 12px;
   }
@@ -161,37 +161,37 @@
     font-weight: 600;
     font-size: 0.9rem;
   }
-  .status-pending { color: #aaa; }
-  .status-running { color: #667eea; }
-  .status-merging { color: #aa66ff; }
-  .status-completed { color: #4a4; }
-  .status-failed { color: #f55; }
-  .status-cancelled { color: #f90; }
+  .status-pending { color: var(--text-secondary); }
+  .status-running { color: var(--accent-start); }
+  .status-merging { color: var(--accent-end); }
+  .status-completed { color: var(--success); }
+  .status-failed { color: var(--danger); }
+  .status-cancelled { color: var(--warning); }
 
   .progress-container { margin-bottom: 12px; }
   .progress-bar {
     height: 8px;
-    background: #1a1a2e;
+    background: var(--bg-secondary);
     border-radius: 4px;
     overflow: hidden;
   }
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #667eea, #764ba2);
+    background: var(--accent-gradient);
     border-radius: 4px;
     transition: width 0.5s;
   }
   .progress-text {
     margin-top: 4px;
     font-size: 0.8rem;
-    color: #888;
+    color: var(--text-secondary);
   }
 
   .job-error {
     padding: 8px 12px;
-    background: rgba(255,100,100,0.1);
+    background: rgba(255,71,87,0.1);
     border-radius: 6px;
-    color: #f88;
+    color: var(--danger);
     font-size: 0.85rem;
     margin-bottom: 10px;
   }
@@ -208,13 +208,13 @@
     font-size: 0.85rem;
   }
   .download-btn {
-    background: linear-gradient(135deg, #667eea, #764ba2);
+    background: var(--accent-gradient);
     color: #fff;
   }
   .cancel-btn {
     background: transparent;
-    border: 1px solid #f90;
-    color: #f90;
+    border: 1px solid var(--warning);
+    color: var(--warning);
   }
-  .cancel-btn:hover { background: #f90; color: #fff; }
+  .cancel-btn:hover { background: var(--warning); color: #fff; }
 </style>

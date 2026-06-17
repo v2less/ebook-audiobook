@@ -181,44 +181,44 @@
 
 <style>
   .card {
-    padding: 20px; background: #252540; border-radius: 12px;
-    border: 1px solid #2a2a3a; margin-top: 12px;
+    padding: 20px; background: var(--bg-card); border-radius: 12px;
+    border: 1px solid var(--border-color); margin-top: 12px;
   }
   .card h3 { margin-bottom: 6px; }
-  .desc { color: #888; font-size: 0.85rem; margin-bottom: 12px; }
-  .desc a { color: #667eea; }
-  label { display: block; font-size: 0.8rem; color: #aaa; margin: 10px 0 4px; }
+  .desc { color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 12px; }
+  .desc a { color: var(--accent-start); }
+  label { display: block; font-size: 0.8rem; color: var(--text-secondary); margin: 10px 0 4px; }
   .field {
-    width: 100%; padding: 10px 14px; background: #1a1a2e;
-    border: 1px solid #3a3a5a; border-radius: 8px; color: #e0e0e0; font-size: 0.9rem;
+    width: 100%; padding: 10px 14px; background: var(--bg-secondary);
+    border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); font-size: 0.9rem;
   }
-  .status { color: #aaa; font-size: 0.85rem; margin-top: 8px; }
-  .success { color: #4a4; font-size: 0.85rem; margin-top: 12px; }
+  .status { color: var(--text-secondary); font-size: 0.85rem; margin-top: 8px; }
+  .success { color: var(--success); font-size: 0.85rem; margin-top: 12px; }
   .save-btn {
     margin-top: 16px; width: 100%; padding: 14px;
-    background: linear-gradient(135deg, #667eea, #764ba2);
+    background: var(--accent-gradient);
     color: #fff; border: none; border-radius: 10px; cursor: pointer;
     font-size: 1rem; font-weight: 600;
   }
   .import-result {
-    margin-top: 10px; padding: 10px; background: rgba(100,255,100,0.1);
-    border-radius: 8px; color: #8f8; font-size: 0.85rem;
+    margin-top: 10px; padding: 10px; background: rgba(46,213,115,0.1);
+    border-radius: 8px; color: var(--success); font-size: 0.85rem;
   }
-  .warn { color: #f90; }
+  .warn { color: var(--warning); }
   .quick {
     padding: 10px 24px;
     background: linear-gradient(135deg, #f093fb, #f5576c);
     color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem;
   }
   .prompt-ta {
-    width: 100%; padding: 10px 14px; background: #1a1a2e;
-    border: 1px solid #3a3a5a; border-radius: 8px; color: #e0e0e0;
+    width: 100%; padding: 10px 14px; background: var(--bg-secondary);
+    border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary);
     font-size: 0.8rem; font-family: monospace; resize: vertical;
   }
   .prompt-actions { display: flex; gap: 8px; margin-top: 10px; }
   .prompt-actions button {
-    padding: 6px 14px; background: #667eea; color: #fff;
+    padding: 6px 14px; background: var(--accent-start); color: #fff;
     border: none; border-radius: 6px; cursor: pointer; font-size: 0.8rem;
   }
-  .prompt-actions button.reset { background: transparent; border: 1px solid #666; color: #aaa; }
+  .prompt-actions button.reset { background: transparent; border: 1px solid var(--text-muted); color: var(--text-secondary); }
 </style>

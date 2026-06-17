@@ -5,6 +5,7 @@
   import JobDashboard from './lib/JobDashboard.svelte'
   import Settings from './lib/Settings.svelte'
   import ScriptEditor from './lib/ScriptEditor.svelte'
+  import BookEditor from './lib/BookEditor.svelte'
 
   let tab = $state('upload')
   let selectedBook = $state(null)
@@ -38,6 +39,7 @@
 
   const tabs = [
     { id: 'upload', label: '📚 上传', icon: '📚' },
+    { id: 'editor', label: '✏️ 校对', icon: '✏️' },
     { id: 'voices', label: '🎤 音色', icon: '🎤' },
     { id: 'synthesize', label: '⚙️ 合成', icon: '⚙️' },
     { id: 'jobs', label: '📋 任务', icon: '📋' },
@@ -78,21 +80,24 @@
   </nav>
 
   <main>
-    {#if tab === 'upload'}
+    <div style="display: {tab === 'upload' ? 'block' : 'none'}">
       <Upload onSelect={onBookSelected} />
-    {/if}
-    {#if tab === 'voices'}
+    </div>
+    <div style="display: {tab === 'editor' ? 'block' : 'none'}">
+      <BookEditor isActive={tab === 'editor'} />
+    </div>
+    <div style="display: {tab === 'voices' ? 'block' : 'none'}">
       <VoiceStudio onSelect={onVoiceSelected} />
-    {/if}
-    {#if tab === 'synthesize'}
-      <SynthesisConfig book={selectedBook} selectedVoice={selectedVoice} />
-    {/if}
-    {#if tab === 'jobs'}
+    </div>
+    <div style="display: {tab === 'synthesize' ? 'block' : 'none'}">
+      <SynthesisConfig book={selectedBook} selectedVoice={selectedVoice} isActive={tab === 'synthesize'} />
+    </div>
+    <div style="display: {tab === 'jobs' ? 'block' : 'none'}">
       <JobDashboard />
-    {/if}
-    {#if tab === 'settings'}
+    </div>
+    <div style="display: {tab === 'settings' ? 'block' : 'none'}">
       <Settings />
-    {/if}
+    </div>
   </main>
 
   <!-- Mobile bottom tab bar -->

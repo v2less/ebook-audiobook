@@ -16,7 +16,7 @@ func (s *Server) setupRouter() {
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RequestID)
-	r.Use(chimw.Timeout(60 * time.Second))
+	r.Use(chimw.Timeout(5 * time.Minute))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -47,6 +47,7 @@ func (s *Server) setupRouter() {
 			r.Get("/", s.listBooks)
 			r.Post("/upload", s.uploadBook)
 			r.Get("/{id}", s.getBook)
+			r.Put("/{id}/chapters", s.updateBookChapters)
 			r.Delete("/{id}", s.deleteBook)
 		})
 

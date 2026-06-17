@@ -27,13 +27,18 @@
 
   async function previewVoice(voice) {
     previewing = true
+    error = ''
     try {
       const res = await fetch(`/api/v1/voices/${voice.id}/preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: previewText }),
       })
-      if (!res.ok) throw new Error('Preview failed')
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}))
+        const msg = errBody?.error?.message || errBody?.error || `预览失败 (${res.status})`
+        throw new Error(msg)
+      }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = new Audio(url)
@@ -155,10 +160,10 @@
   .preview-bar input {
     width: 100%;
     padding: 10px 14px;
-    background: #252540;
-    border: 1px solid #3a3a5a;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    color: #e0e0e0;
+    color: var(--text-primary);
     font-size: 0.9rem;
   }
   .voice-grid {
@@ -169,48 +174,48 @@
   }
   .voice-card {
     padding: 14px;
-    background: #252540;
+    background: var(--bg-card);
     border-radius: 10px;
-    border: 1px solid #2a2a3a;
+    border: 1px solid var(--border-color);
   }
   .voice-head { display: flex; justify-content: space-between; align-items: center; }
   .voice-name { font-weight: 600; }
-  .voice-lang { font-size: 0.75rem; color: #888; }
-  .voice-detail { color: #888; font-size: 0.8rem; display: block; margin: 4px 0 8px; }
+  .voice-lang { font-size: 0.75rem; color: var(--text-secondary); }
+  .voice-detail { color: var(--text-secondary); font-size: 0.8rem; display: block; margin: 4px 0 8px; }
   .voice-actions { display: flex; gap: 6px; }
   .voice-actions button {
     padding: 5px 10px;
-    border: 1px solid #3a3a5a;
+    border: 1px solid var(--border-color);
     background: transparent;
-    color: #aaa;
+    color: var(--text-secondary);
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.8rem;
   }
-  .voice-actions button:hover { border-color: #667eea; color: #fff; }
-  .voice-actions button.danger:hover { border-color: #f55; color: #f55; }
+  .voice-actions button:hover { border-color: var(--accent-start); color: var(--text-primary); }
+  .voice-actions button.danger:hover { border-color: var(--danger); color: var(--danger); }
 
   .create-form {
     display: flex;
     flex-direction: column;
     gap: 10px;
     padding: 16px;
-    background: #252540;
+    background: var(--bg-card);
     border-radius: 10px;
     margin-bottom: 16px;
   }
   .create-form input, .create-form select, .create-form textarea {
     padding: 10px 14px;
-    background: #1a1a2e;
-    border: 1px solid #3a3a5a;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    color: #e0e0e0;
+    color: var(--text-primary);
     font-size: 0.9rem;
   }
   .create-form textarea { resize: vertical; }
   .create-form button {
     padding: 10px;
-    background: linear-gradient(135deg, #667eea, #764ba2);
+    background: var(--accent-gradient);
     color: #fff;
     border: none;
     border-radius: 8px;
@@ -220,15 +225,15 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    color: #aaa;
+    color: var(--text-secondary);
     font-size: 0.85rem;
     cursor: pointer;
   }
   .file-label input { cursor: pointer; }
-  .file-name { color: #4a4; font-size: 0.8rem; }
+  .file-name { color: var(--success); font-size: 0.8rem; }
   .btn {
     padding: 8px 16px;
-    background: linear-gradient(135deg, #667eea, #764ba2);
+    background: var(--accent-gradient);
     color: #fff;
     border: none;
     border-radius: 8px;
@@ -237,10 +242,10 @@
   }
   .error {
     padding: 10px;
-    background: rgba(255,100,100,0.1);
-    border: 1px solid #f55;
+    background: rgba(255,71,87,0.1);
+    border: 1px solid var(--danger);
     border-radius: 8px;
-    color: #f88;
+    color: var(--danger);
     margin-bottom: 12px;
   }
 </style>

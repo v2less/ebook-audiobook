@@ -18,8 +18,8 @@ export const api = {
   async get(path) {
     const res = await fetch(path)
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(extractError(body) || res.statusText)
+      const errBody = await res.json().catch(() => ({}))
+      throw new Error(extractError(errBody) || res.statusText)
     }
     return res.json()
   },
@@ -31,8 +31,8 @@ export const api = {
       body: JSON.stringify(body),
     })
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(extractError(body) || res.statusText)
+      const errBody = await res.json().catch(() => ({}))
+      throw new Error(extractError(errBody) || res.statusText)
     }
     return res.json()
   },
@@ -42,8 +42,8 @@ export const api = {
     form.append('file', file)
     const res = await fetch(path, { method: 'POST', body: form })
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(extractError(body) || res.statusText)
+      const errBody = await res.json().catch(() => ({}))
+      throw new Error(extractError(errBody) || res.statusText)
     }
     return res.json()
   },
@@ -51,8 +51,8 @@ export const api = {
   async del(path) {
     const res = await fetch(path, { method: 'DELETE' })
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(extractError(body) || res.statusText)
+      const errBody = await res.json().catch(() => ({}))
+      throw new Error(extractError(errBody) || res.statusText)
     }
     return res.json()
   },
@@ -64,8 +64,8 @@ export const api = {
       body: JSON.stringify(body),
     })
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(extractError(body) || res.statusText)
+      const errBody = await res.json().catch(() => ({}))
+      throw new Error(extractError(errBody) || res.statusText)
     }
     return res.json()
   },
@@ -83,8 +83,8 @@ export const api = {
     }
     const res = await fetch(path, { method: 'POST', body: form })
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(extractError(body) || res.statusText)
+      const errBody = await res.json().catch(() => ({}))
+      throw new Error(extractError(errBody) || res.statusText)
     }
     return res.json()
   },
@@ -96,8 +96,8 @@ export const api = {
       body: JSON.stringify(body),
     })
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(extractError(body) || res.statusText)
+      const errBody = await res.json().catch(() => ({}))
+      throw new Error(extractError(errBody) || res.statusText)
     }
     if (responseType === 'blob') return res.blob()
     return res.arrayBuffer()
@@ -110,8 +110,8 @@ export const api = {
       body: JSON.stringify(body),
     })
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(extractError(body) || res.statusText)
+      const errBody = await res.json().catch(() => ({}))
+      throw new Error(extractError(errBody) || res.statusText)
     }
     return res.blob()
   },
@@ -123,8 +123,8 @@ export const api = {
       body: JSON.stringify(body),
     })
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(extractError(body) || res.statusText)
+      const errBody = await res.json().catch(() => ({}))
+      throw new Error(extractError(errBody) || res.statusText)
     }
     // Returns audio blob directly
     const contentType = res.headers.get('Content-Type') || ''

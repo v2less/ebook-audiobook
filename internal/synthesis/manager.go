@@ -261,7 +261,8 @@ func (m *Manager) splitBook(job *model.SynthesisJob, book *model.Book) ([]segTas
 			vp = lookupPresetVoice(voiceID)
 		}
 
-		for si, text := range m.splitter.Split(ch.Content) {
+		texts := m.splitter.Split(ch.Content)
+		for si, text := range texts {
 			seg := &model.AudioSegment{
 				JobID: job.ID, ChapterIdx: ch.Index, SegmentIdx: si,
 				Text: text, Status: "pending",
@@ -273,7 +274,7 @@ func (m *Manager) splitBook(job *model.SynthesisJob, book *model.Book) ([]segTas
 				opts: job.Config.TTSOptions,
 			})
 		}
-		total += len(m.splitter.Split(ch.Content))
+		total += len(texts)
 	}
 	return tasks, total
 }

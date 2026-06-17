@@ -106,9 +106,14 @@ func (s *Server) getVoice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteVoice(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.DeleteVoiceProfile(chi.URLParam(r, "id")); err != nil {
+	id := chi.URLParam(r, "id")
+	vp, _ := s.store.GetVoiceProfile(id)
+	if err := s.store.DeleteVoiceProfile(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	if vp != nil && vp.SamplePath != "" {
+		os.Remove(vp.SamplePath)
 	}
 	writeJSON(w, map[string]string{"status": "deleted"})
 }
@@ -122,7 +127,8 @@ func (s *Server) previewVoice(w http.ResponseWriter, r *http.Request) {
 		// Try preset voices
 		for _, p := range tts.MiMoPresetVoices {
 			if p.ID == id || p.VoiceID == id {
-				vp = &p
+				c := p
+				vp = &c
 				break
 			}
 		}
@@ -169,7 +175,8 @@ func (s *Server) evaluateVoice(w http.ResponseWriter, r *http.Request) {
 		// Try preset voices
 		for _, p := range tts.MiMoPresetVoices {
 			if p.ID == id || p.VoiceID == id {
-				vp = &p
+				c := p
+				vp = &c
 				break
 			}
 		}

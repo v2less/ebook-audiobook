@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"ebook-audiobook/internal/model"
@@ -331,7 +332,17 @@ func (p *PDFParser) splitPDFMarkdown(text, defaultTitle string) []model.Chapter 
 
 	// Fallback to heading-based splitting
 	chapters := splitByHeadings(text, defaultTitle)
-	if len(chapters) > 0 && len(chapters[0].Content) > 20 {
+	if len(chapters) > 1 {
+		return chapters
+	}
+
+	// Try to detect chapter boundaries from the text content
+	detectedChapters := p.detectChaptersFromText(text, defaultTitle)
+	if len(detectedChapters) > 1 {
+		return detectedChapters
+	}
+
+	if len(chapters) == 1 && len(chapters[0].Content) > 20 {
 		return chapters
 	}
 
@@ -363,31 +374,115 @@ func (p *PDFParser) parseSimple(filePath string) (*model.Book, error) {
 	text := string(out)
 	title := strings.TrimSuffix(filepath.Base(filePath), ".pdf")
 
-	// Split by form feeds (page breaks) into chapters
-	pages := strings.Split(text, "\f")
-	var chapters []model.Chapter
-	for i, page := range pages {
+	// Split by form feeds (page breaks)
+	rawPages := strings.Split(text, "\f")
+	var pages []string
+	for _, page := range rawPages {
 		page = strings.TrimSpace(page)
 		if len(page) < 20 {
 			continue
 		}
-		// Group pages into chapters (~10 pages each)
-		if i%10 == 0 {
-			chapters = append(chapters, model.Chapter{
-				Index:   len(chapters),
-				Title:   fmt.Sprintf("Section %d", len(chapters)+1),
-				Content: page,
-			})
-		} else if len(chapters) > 0 {
-			chapters[len(chapters)-1].Content += "\n\n" + page
+		pages = append(pages, page)
+	}
+
+	if len(pages) == 0 {
+		return &model.Book{
+			Title: title, Author: "Unknown", Format: "pdf", FileName: filepath.Base(filePath),
+		}, nil
+	}
+
+	// Join all pages into full text first
+	fullText := strings.Join(pages, "\n\n")
+
+	// Try to detect chapter boundaries from the text content
+	chapters := p.detectChaptersFromText(fullText, title)
+	if len(chapters) > 1 {
+		return &model.Book{
+			Title: title, Author: "Unknown", Format: "pdf", FileName: filepath.Base(filePath),
+			Chapters: chapters,
+		}, nil
+	}
+
+	// Fallback: group pages into chapters (~10 pages each)
+	var fallbackChapters []model.Chapter
+	pagesPerChapter := 10
+	for i := 0; i < len(pages); i += pagesPerChapter {
+		end := i + pagesPerChapter
+		if end > len(pages) {
+			end = len(pages)
 		}
+		fallbackChapters = append(fallbackChapters, model.Chapter{
+			Index:   len(fallbackChapters),
+			Title:   fmt.Sprintf("Section %d (P%d-%d)", len(fallbackChapters)+1, i+1, end),
+			Content: strings.TrimSpace(strings.Join(pages[i:end], "\n\n")),
+		})
 	}
 
 	return &model.Book{
-		Title:    title,
-		Author:   "Unknown",
-		Format:   "pdf",
-		FileName: filepath.Base(filePath),
-		Chapters: chapters,
+		Title: title, Author: "Unknown", Format: "pdf", FileName: filepath.Base(filePath),
+		Chapters: fallbackChapters,
 	}, nil
+}
+
+// detectChaptersFromText tries to split text into chapters by detecting
+// common Chinese/English chapter heading patterns in the content.
+func (p *PDFParser) detectChaptersFromText(text, defaultTitle string) []model.Chapter {
+	lines := strings.Split(text, "\n")
+	var chapters []model.Chapter
+	var currentLines []string
+	currentTitle := defaultTitle
+	chIdx := 0
+
+	// Common chapter heading patterns (Chinese books)
+	chapterPatterns := []string{
+		`^第[一二三四五六七八九十百千\d]+[章节回篇卷]`,     // 第一章, 第1章, 第一节
+		`^[一二三四五六七八九十]+[、.．]`,              // 一、 二、
+		`^Chapter\s+\d+`,                       // Chapter 1
+		`^CHAPTER\s+\d+`,                       // CHAPTER 1
+	}
+
+	var rePatterns []*regexp.Regexp
+	for _, pat := range chapterPatterns {
+		if re, err := regexp.Compile(pat); err == nil {
+			rePatterns = append(rePatterns, re)
+		}
+	}
+
+	isChapterHeading := func(line string) bool {
+		trimmed := strings.TrimSpace(line)
+		if len(trimmed) < 2 || len(trimmed) > 40 {
+			return false
+		}
+		for _, re := range rePatterns {
+			if re.MatchString(trimmed) {
+				return true
+			}
+		}
+		return false
+	}
+
+	flushChapter := func() {
+		content := strings.TrimSpace(strings.Join(currentLines, "\n"))
+		if len(content) > 50 { // Only keep chapters with substantial content
+			chapters = append(chapters, model.Chapter{
+				Index:   chIdx,
+				Title:   currentTitle,
+				Content: content,
+			})
+			chIdx++
+		}
+		currentLines = nil
+	}
+
+	for _, line := range lines {
+		if isChapterHeading(line) {
+			flushChapter()
+			currentTitle = strings.TrimSpace(line)
+			continue
+		}
+		currentLines = append(currentLines, line)
+	}
+	flushChapter()
+
+	return chapters
 }
