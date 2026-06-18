@@ -276,6 +276,25 @@ func findManifestHref(content, id string) string {
 }
 
 func stripHTMLTags(html string) string {
+	// Remove <style>...</style>, <script>...</script>, and <head>...</head> blocks entirely
+	for _, tag := range []string{"style", "script", "head"} {
+		for {
+			lower := strings.ToLower(html)
+			start := strings.Index(lower, "<"+tag)
+			if start < 0 {
+				break
+			}
+			end := strings.Index(lower[start:], "</"+tag+">")
+			if end < 0 {
+				// No closing tag — remove from start tag to end of string
+				html = html[:start]
+				break
+			}
+			html = html[:start] + html[start+end+len("</"+tag+">"):]
+		}
+	}
+
+	// Strip remaining HTML tags
 	inTag := false
 	var out []byte
 	for i := 0; i < len(html); i++ {
@@ -291,8 +310,18 @@ func stripHTMLTags(html string) string {
 			out = append(out, html[i])
 		}
 	}
+
+	// Decode common HTML entities
+	result := string(out)
+	result = strings.ReplaceAll(result, "&nbsp;", " ")
+	result = strings.ReplaceAll(result, "&amp;", "&")
+	result = strings.ReplaceAll(result, "&lt;", "<")
+	result = strings.ReplaceAll(result, "&gt;", ">")
+	result = strings.ReplaceAll(result, "&quot;", "\"")
+	result = strings.ReplaceAll(result, "&#39;", "'")
+
 	// Collapse whitespace
-	result := strings.Join(strings.Fields(string(out)), " ")
+	result = strings.Join(strings.Fields(result), " ")
 	return result
 }
 

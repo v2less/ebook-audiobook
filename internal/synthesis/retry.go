@@ -3,6 +3,7 @@ package synthesis
 import (
 	"context"
 	"log"
+	"math/rand"
 	"strings"
 	"time"
 )
@@ -20,9 +21,9 @@ type RetryPolicy struct {
 // DefaultRetryPolicy returns a policy tuned for TTS API rate limits
 func DefaultRetryPolicy() *RetryPolicy {
 	return &RetryPolicy{
-		MaxRetries: 3,
-		BaseDelay:  1 * time.Second,
-		MaxDelay:   10 * time.Second,
+		MaxRetries: 6,
+		BaseDelay:  2 * time.Second,
+		MaxDelay:   60 * time.Second,
 		IsRetryable: func(err error) bool {
 			msg := err.Error()
 			return strings.Contains(msg, "429") || strings.Contains(msg, "Too many")
@@ -65,9 +66,11 @@ func (p *RetryPolicy) Do(ctx context.Context, fn func() error) error {
 }
 
 func (p *RetryPolicy) backoff(attempt int) time.Duration {
-	delay := p.BaseDelay * time.Duration(1<<(attempt-1)) // 1s, 2s, 4s
+	delay := p.BaseDelay * time.Duration(1<<(attempt-1)) // 2s, 4s, 8s, 16s, 32s, 60s
 	if delay > p.MaxDelay {
 		delay = p.MaxDelay
 	}
-	return delay
+	// Add jitter (±25%) to avoid thundering herd
+	jitter := time.Duration(float64(delay) * (0.75 + rand.Float64()*0.5))
+	return jitter
 }

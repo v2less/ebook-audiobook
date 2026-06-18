@@ -86,10 +86,19 @@ func (e *MiMoEngine) Synthesize(ctx context.Context, text string, opts model.TTS
 
 // SynthesizeClone 音色复刻合成
 func (e *MiMoEngine) SynthesizeClone(ctx context.Context, text string, voiceAudio []byte, voiceFormat string, opts model.TTSOptions) ([]byte, string, error) {
-	// voiceFormat: "mp3" or "wav"
-	mimeType := "audio/mpeg"
-	if voiceFormat == "wav" {
+	// Map file extension to MIME type
+	mimeType := "audio/mpeg" // default for mp3
+	switch strings.ToLower(voiceFormat) {
+	case "wav":
 		mimeType = "audio/wav"
+	case "m4a", "aac":
+		mimeType = "audio/mp4"
+	case "ogg":
+		mimeType = "audio/ogg"
+	case "flac":
+		mimeType = "audio/flac"
+	case "mp3":
+		mimeType = "audio/mpeg"
 	}
 	voiceB64 := fmt.Sprintf("data:%s;base64,%s", mimeType, base64.StdEncoding.EncodeToString(voiceAudio))
 

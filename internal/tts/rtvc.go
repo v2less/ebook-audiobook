@@ -166,8 +166,8 @@ func (r *EngineRegistry) SynthesizeWithEngine(ctx context.Context, text string, 
 		return nil, "", err
 	}
 
-	log.Printf("🎵 Synthesize: source=%s engine=%s voiceID=%s sample=%s design=%s",
-		vp.Source, vp.Engine, vp.VoiceID, vp.SamplePath, vp.DesignPrompt)
+	log.Printf("🎵 Synthesize: profile=%s(%s) source=%s engine=%s voiceID=%s sample=%s design=%s",
+		vp.ID, vp.Name, vp.Source, vp.Engine, vp.VoiceID, vp.SamplePath, vp.DesignPrompt)
 
 	switch vp.Source {
 	case "preset":
@@ -180,6 +180,19 @@ func (r *EngineRegistry) SynthesizeWithEngine(ctx context.Context, text string, 
 				return nil, "", fmt.Errorf("read voice sample: %w", err)
 			}
 			voiceFormat := strings.TrimPrefix(filepath.Ext(vp.SamplePath), ".")
+
+			// MiMo voiceclone only supports MP3 and WAV — convert other formats via ffmpeg
+			lowerFmt := strings.ToLower(voiceFormat)
+			if lowerFmt != "mp3" && lowerFmt != "wav" {
+				log.Printf("🔄 Converting voice sample from %s to mp3 (MiMo only supports mp3/wav)", voiceFormat)
+				converted, err := convertAudioToMP3(vp.SamplePath)
+				if err != nil {
+					return nil, "", fmt.Errorf("convert voice sample to mp3: %w", err)
+				}
+				voiceAudio = converted
+				voiceFormat = "mp3"
+			}
+
 			if _, ok := engine.(*MiMoEngine); ok {
 				return engine.(*MiMoEngine).SynthesizeClone(ctx, text, voiceAudio, voiceFormat, opts)
 			}
@@ -194,4 +207,21 @@ func (r *EngineRegistry) SynthesizeWithEngine(ctx context.Context, text string, 
 	return engine.Synthesize(ctx, text, opts)
 }
 
+// convertAudioToMP3 converts an audio file to MP3 format using ffmpeg.
+// This is needed because MiMo voiceclone only accepts MP3 and WAV reference audio.
+func convertAudioToMP3(inputPath string) ([]byte, error) {
+	tmpFile, err := os.CreateTemp("", "voice-convert-*.mp3")
+	if err != nil {
+		return nil, err
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath)
 
+	cmd := exec.Command("ffmpeg", "-y", "-i", inputPath, "-acodec", "libmp3lame", "-q:a", "2", tmpPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("ffmpeg convert: %s: %w", string(out), err)
+	}
+
+	return os.ReadFile(tmpPath)
+}

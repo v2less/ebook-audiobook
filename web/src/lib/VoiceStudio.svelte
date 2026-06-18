@@ -120,8 +120,8 @@
       {/if}
       {#if createForm.source === 'clone'}
         <label class="file-label">
-          上传参考音频 (MP3/WAV, &lt;10MB)
-          <input type="file" accept=".mp3,.wav,audio/mpeg,audio/wav"
+          上传参考音频 (MP3/WAV/M4A/OGG/FLAC, &lt;10MB)
+          <input type="file" accept=".mp3,.wav,.m4a,.ogg,.flac,.aac,audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/flac"
             onchange={(e) => voiceFile = e.target.files?.[0] || null}
           />
         </label>

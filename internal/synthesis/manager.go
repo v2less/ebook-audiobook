@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"ebook-audiobook/internal/model"
 	"ebook-audiobook/internal/storage"
@@ -21,11 +22,12 @@ type Manager struct {
 	assembler AudioAssembler
 	retry     *RetryPolicy
 
-	maxWorkers int
-	outputDir  string
-	defaultFmt string
-	sampleRate int
-	chapterGap float64
+	maxWorkers   int
+	outputDir    string
+	defaultFmt   string
+	sampleRate   int
+	chapterGap   float64
+	apiThrottle  chan struct{} // global rate limiter: 1 API call at a time
 
 	mu        sync.Mutex
 	jobs      map[string]context.CancelFunc
@@ -33,19 +35,22 @@ type Manager struct {
 }
 
 func NewManager(store *storage.Store, engineReg *tts.EngineRegistry, outputDir string, maxWorkers int, defaultFmt string, sampleRate int, chapterGap float64) *Manager {
+	throttle := make(chan struct{}, 1)
+	throttle <- struct{}{} // initialize with one token
 	return &Manager{
-		store:      store,
-		engineReg:  engineReg,
-		splitter:   tts.NewTextSplitter(1500),
-		assembler:  NewFFmpegAssembler(),
-		retry:      DefaultRetryPolicy(),
-		maxWorkers: maxWorkers,
-		outputDir:  outputDir,
-		defaultFmt: defaultFmt,
-		sampleRate: sampleRate,
-		chapterGap: chapterGap,
-		jobs:       make(map[string]context.CancelFunc),
-		listeners:  make(map[string][]chan model.JobProgress),
+		store:       store,
+		engineReg:   engineReg,
+		splitter:    tts.NewTextSplitter(1500),
+		assembler:   NewFFmpegAssembler(),
+		retry:       DefaultRetryPolicy(),
+		maxWorkers:  maxWorkers,
+		outputDir:   outputDir,
+		defaultFmt:  defaultFmt,
+		sampleRate:  sampleRate,
+		chapterGap:  chapterGap,
+		apiThrottle: throttle,
+		jobs:        make(map[string]context.CancelFunc),
+		listeners:   make(map[string][]chan model.JobProgress),
 	}
 }
 
@@ -279,20 +284,36 @@ func (m *Manager) splitBook(job *model.SynthesisJob, book *model.Book) ([]segTas
 	return tasks, total
 }
 
-// synthesizeOne synthesizes a single segment with retry
+// synthesizeOne synthesizes a single segment with retry and global rate limiting
 func (m *Manager) synthesizeOne(ctx context.Context, t segTask) ([]byte, string, error) {
 	var audio []byte
 	var format string
 
 	err := m.retry.Do(ctx, func() error {
+		// Acquire API throttle — serialize all TTS API calls globally
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-m.apiThrottle:
+			// got the token, proceed
+		}
+
 		var synthErr error
 		audio, format, synthErr = m.engineReg.SynthesizeWithEngine(ctx, t.seg.Text, t.vp, t.opts)
+
+		// Release token after a cool-down delay to respect API rate limits
+		go func() {
+			time.Sleep(3 * time.Second)
+			m.apiThrottle <- struct{}{}
+		}()
+
 		return synthErr
 	})
 	if err != nil {
 		return nil, "", err
 	}
 	return audio, format, nil
+
 }
 
 // lookupPresetVoice finds a preset voice by ID or VoiceID, translating our
