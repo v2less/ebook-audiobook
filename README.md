@@ -104,6 +104,9 @@ llm:
 | `GET` | `/api/v1/settings` | 获取/恢复运行时设置 |
 | `PUT` | `/api/v1/settings` | 保存运行时设置 |
 | `POST` | `/api/v1/library/import` | 导入 Unitale 工程文件 |
+| `GET` | `/api/v1/books/:id/role-voices` | 获取书籍角色音色映射 |
+| `PUT` | `/api/v1/books/:id/role-voices` | 更新书籍角色音色映射 |
+| `POST` | `/api/v1/voices/generate-design` | 通过 voice_design 生成临时音色音频 |
 | `GET` | `/health` | 健康检查 |
 
 ## 支持的格式
@@ -126,6 +129,7 @@ llm:
 - **预置音色**：冰糖、茉莉、苏打、白桦、Mia、Chloe、Milo、Dean（MiMo v2.5）
 - **音色复刻**：上传参考音频 → Base64 → MiMo / OpenAI TTS API
 - **音色设计**：文本描述音色特征 → MiMo API Voice Design
+- **角色临时音色自动生成**：根据 LLM 设计的音色描述（voice design）自动调用 Voice Design 生成专属参考音频并持久化绑定，后续合成通过音色克隆（Voice Clone）确保音色一致。
 - **自定义 TTS**：任意 OpenAI `/audio/speech` 兼容服务
 - **音色质量评估**：信噪比、语速、综合评分
 
@@ -142,6 +146,7 @@ llm:
 ### 🎤 TTS 引擎
 - **故障转移链**：MiMo → 自定义 TTS → RTVC 自动切换
 - **流式合成**：MiMo SSE 流式 + 自定义引擎 SSE 流式
+- **角色音色持久化绑定**：支持在 AI Studio 中根据角色的音色描述自动生成临时音色并持久化绑定。对于历史未分析音色描述的角色，支持通过 LLM 自动补全设计。
 - MiMo v2.5 全特性：Audio Tags、Style Prefixes、导演模式
 
 ### 🔊 音频生产
