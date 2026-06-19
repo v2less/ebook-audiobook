@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+
 	"ebook-audiobook/internal/model"
 )
 
@@ -195,3 +197,32 @@ func (s *Server) directImportNow(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, result)
 }
+
+// ---- Book Role Voices handlers ----
+
+func (s *Server) getBookRoleVoices(w http.ResponseWriter, r *http.Request) {
+	bookID := chi.URLParam(r, "id")
+	m, err := s.store.GetBookRoleVoices(bookID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, m)
+}
+
+func (s *Server) updateBookRoleVoices(w http.ResponseWriter, r *http.Request) {
+	bookID := chi.URLParam(r, "id")
+	var roleVoices map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&roleVoices); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	for roleName, vpID := range roleVoices {
+		if err := s.store.SaveBookRoleVoice(bookID, roleName, vpID); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+

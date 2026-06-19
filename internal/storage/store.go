@@ -85,6 +85,13 @@ func (s *Store) migrate() error {
 		error TEXT DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS book_role_voices (
+		book_id TEXT NOT NULL,
+		role_name TEXT NOT NULL,
+		voice_profile_id TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (book_id, role_name)
+	);
 	`
 	_, err := s.db.Exec(schema)
 	return err
@@ -301,4 +308,37 @@ func (s *Store) GetJobSegments(jobID string) ([]*model.AudioSegment, error) {
 		segs = append(segs, seg)
 	}
 	return segs, nil
+}
+
+// ---- BookRoleVoice CRUD ----
+
+func (s *Store) SaveBookRoleVoice(bookID, roleName, voiceProfileID string) error {
+	_, err := s.db.Exec(
+		`INSERT OR REPLACE INTO book_role_voices (book_id, role_name, voice_profile_id, created_at)
+		 VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+		bookID, roleName, voiceProfileID,
+	)
+	return err
+}
+
+func (s *Store) GetBookRoleVoices(bookID string) (map[string]string, error) {
+	rows, err := s.db.Query(`SELECT role_name, voice_profile_id FROM book_role_voices WHERE book_id = ?`, bookID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	m := make(map[string]string)
+	for rows.Next() {
+		var role, vpID string
+		if err := rows.Scan(&role, &vpID); err != nil {
+			return nil, err
+		}
+		m[role] = vpID
+	}
+	return m, nil
+}
+
+func (s *Store) DeleteBookRoleVoice(bookID, roleName string) error {
+	_, err := s.db.Exec(`DELETE FROM book_role_voices WHERE book_id = ? AND role_name = ?`, bookID, roleName)
+	return err
 }

@@ -48,6 +48,8 @@ func (s *Server) setupRouter() {
 			r.Post("/upload", s.uploadBook)
 			r.Get("/{id}", s.getBook)
 			r.Put("/{id}/chapters", s.updateBookChapters)
+			r.Get("/{id}/role-voices", s.getBookRoleVoices)
+			r.Put("/{id}/role-voices", s.updateBookRoleVoices)
 			r.Delete("/{id}", s.deleteBook)
 		})
 
@@ -56,6 +58,7 @@ func (s *Server) setupRouter() {
 			r.Get("/", s.listVoices)
 			r.Get("/presets", s.listPresetVoices)
 			r.Post("/", s.createVoice)
+			r.Post("/generate-design", s.generateVoiceDesign)
 			r.Get("/{id}", s.getVoice)
 			r.Delete("/{id}", s.deleteVoice)
 			r.Post("/{id}/preview", s.previewVoice)

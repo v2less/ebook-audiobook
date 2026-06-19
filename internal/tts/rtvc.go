@@ -172,7 +172,8 @@ func (r *EngineRegistry) SynthesizeWithEngine(ctx context.Context, text string, 
 	switch vp.Source {
 	case "preset":
 		opts.VoiceID = vp.VoiceID
-	case "clone":
+	case "clone", "generated":
+		// generated: 先用 voicedesign 生成参考音频保存为 sample，后续用 voiceclone 复刻
 		if engine.Name() == "MiMo" {
 			// Read reference audio
 			voiceAudio, err := os.ReadFile(vp.SamplePath)

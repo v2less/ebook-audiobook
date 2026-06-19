@@ -28,6 +28,10 @@
   let generatingVoices = $state(false)
   let genProgress = $state({ current: 0, total: 0, currentChapter: '' })
 
+  // 自动生成音色相关状态
+  let generatingDesignFor = $state({}) // { charName: true } 正在生成的角色
+  let batchGeneratingDesign = $state(false)
+
   async function loadData() {
     try {
       books = await api.get('/api/v1/books')
@@ -73,8 +77,35 @@
       allAudioUrls = {}
       analyzedChapterIdxs = []
       activeAnalyzedChapterIdx = null
+      generatingDesignFor = {}
+      // 加载已保存的角色-音色绑定
+      if (selectedBookId) loadBookRoleVoices(selectedBookId)
     }
   })
+
+  async function loadBookRoleVoices(bookId) {
+    try {
+      const roleVoices = await api.get(`/api/v1/books/${bookId}/role-voices`)
+      if (roleVoices && typeof roleVoices === 'object') {
+        globalCharacters.forEach(c => {
+          if (roleVoices[c.name]) {
+            c.voice_id = roleVoices[c.name]
+          }
+        })
+      }
+    } catch(e) { /* 首次使用可能没有绑定 */ }
+  }
+
+  async function saveBookRoleVoices() {
+    if (!selectedBookId) return
+    const roleVoices = {}
+    globalCharacters.forEach(c => {
+      if (c.voice_id) roleVoices[c.name] = c.voice_id
+    })
+    try {
+      await api.put(`/api/v1/books/${selectedBookId}/role-voices`, roleVoices)
+    } catch(e) { /* ignore */ }
+  }
 
   const selectedBook = $derived(books.find(b => b.id === selectedBookId))
 
@@ -178,7 +209,15 @@
       const name = item.role_name
       if (name && !seen.has(name)) {
         seen.add(name)
-        chars.push({ name, role: name === '旁白' ? 'narrator' : 'supporting', voice_design: '', gender: '', age: '', personality: '', voice_id: '' })
+        chars.push({
+          name,
+          role: name === '旁白' ? 'narrator' : 'supporting',
+          voice_design: item.voice_design || '',
+          gender: item.gender || '',
+          age: item.age || '',
+          personality: item.personality || '',
+          voice_id: ''
+        })
       }
     })
 
@@ -243,12 +282,165 @@
           activeAnalyzedChapterIdx = idx
         }
       }
+      // 分析完成后，尝试加载已保存的角色-音色绑定
+      if (selectedBookId) {
+        try {
+          const roleVoices = await api.get(`/api/v1/books/${selectedBookId}/role-voices`)
+          if (roleVoices && typeof roleVoices === 'object') {
+            globalCharacters.forEach(c => {
+              if (roleVoices[c.name] && !c.voice_id) {
+                c.voice_id = roleVoices[c.name]
+              }
+            })
+          }
+        } catch(e) { /* ignore */ }
+      }
+      
+      // 为没有音色描述的角色生成描述
+      analyzeProgress.currentChapter = '正在为角色生成音色描述...'
+      await generateVoiceDesignsForCharacters()
+
       success = '批量分析完成！'
     } catch(err) {
       error = '分析过程中断: ' + err.message
     } finally {
       analyzing = false
     }
+  }
+
+  async function generateVoiceDesignsForCharacters() {
+    const charsWithoutDesign = globalCharacters.filter(c => c.name !== '旁白' && !c.voice_design)
+    if (charsWithoutDesign.length === 0) return
+
+    // 收集前几个章节的文本作为上下文
+    let contextText = ''
+    for (const idx of analyzedChapterIdxs.slice(0, 3)) {
+      contextText += (selectedBook.chapters[idx].content || '').slice(0, 3000) + '\n\n'
+    }
+
+    const charNames = charsWithoutDesign.map(c => c.name).join('、')
+    const sp = `你是一个专业的有声书导演。请根据给出的小说内容，为以下角色设计音色（voice_design）。
+要求输出JSON数组，格式如下：
+[
+  {
+    "name": "角色名",
+    "gender": "male/female/neutral",
+    "age": "young/middle-aged/elderly",
+    "personality": "性格特点",
+    "voice_design": "用于TTS合成的音色提示词，描述该角色的音色特点，如：20多岁年轻男性，声音清澈阳光，语速适中，带有学生气。"
+  }
+]
+确保只输出严格的JSON数组，不要任何Markdown和其他解释。
+需要设计音色的角色：${charNames}`
+
+    try {
+      const res = await api.post('/api/v1/ai/llm-proxy', {
+        system_prompt: sp,
+        user_prompt: '小说内容节选：\n' + contextText.slice(0, 8000),
+      })
+      let text = res.reply || ''
+      text = text.replace(/```json\n?/gi, '').replace(/```/g, '').trim()
+      
+      let arr = null
+      function fixJson(s) {
+        s = s.replace(/,\s*([}\]])/g, '$1')
+        s = s.replace(/\\(?!["\\\/bfnrtu0-9])/g, '\\\\')
+        return s
+      }
+      try { arr = JSON.parse(fixJson(text)) } catch(e1) {
+        let match = text.match(/\[\s*\{[\s\S]*?\}\s*\]/)
+        if (match) try { arr = JSON.parse(fixJson(match[0])) } catch(e) {}
+      }
+
+      if (Array.isArray(arr)) {
+        globalCharacters = globalCharacters.map(c => {
+          const design = arr.find(d => d.name === c.name)
+          if (design) {
+            return {
+              ...c,
+              voice_design: design.voice_design || c.voice_design,
+              gender: design.gender || c.gender,
+              age: design.age || c.age,
+              personality: design.personality || c.personality,
+            }
+          }
+          return c
+        })
+      }
+    } catch(e) {
+      console.warn('生成角色音色描述失败:', e)
+    }
+  }
+
+  // ---- 自动生成音色 ----
+
+  async function generateVoiceForChar(c) {
+    if (!c.voice_design) {
+      error = `角色 ${c.name} 没有 voice_design 描述，无法自动生成音色`
+      return
+    }
+    generatingDesignFor = { ...generatingDesignFor, [c.name]: true }
+    error = ''
+    try {
+      const res = await api.post('/api/v1/voices/generate-design', {
+        design_prompt: c.voice_design,
+        preview_text: '你好，这是为角色' + c.name + '自动生成的音色测试。',
+        save_as_name: c.name,
+        gender: c.gender || '',
+      })
+      // 绑定到角色
+      c.voice_id = res.voice_profile.id
+      // 将新生成的音色加入 voices 列表
+      voices = [...voices, res.voice_profile]
+      // 持久化绑定
+      await saveBookRoleVoices()
+      success = `角色 ${c.name} 的音色已生成并固定！`
+    } catch(e) {
+      error = `生成 ${c.name} 音色失败: ${e.message}`
+    } finally {
+      generatingDesignFor = { ...generatingDesignFor, [c.name]: false }
+    }
+  }
+
+  async function batchGenerateDesignVoices() {
+    // 检查是否有角色需要音色但缺少 voice_design
+    const missingDesign = globalCharacters.filter(c => !c.voice_id && !c.voice_design && c.name !== '旁白')
+    if (missingDesign.length > 0) {
+      batchGeneratingDesign = true
+      genProgress = { current: 0, total: 1, currentChapter: '正在让AI构思角色声音特点...' }
+      await generateVoiceDesignsForCharacters()
+      batchGeneratingDesign = false
+    }
+
+    const needGen = globalCharacters.filter(c => !c.voice_id && c.voice_design && c.name !== '旁白')
+    if (needGen.length === 0) {
+      success = '所有角色都已分配音色，或无法生成音色描述！'
+      return
+    }
+    batchGeneratingDesign = true
+    error = ''
+    genProgress = { current: 0, total: needGen.length, currentChapter: '' }
+    try {
+      for (let i = 0; i < needGen.length; i++) {
+        genProgress.current = i + 1
+        genProgress.currentChapter = needGen[i].name
+        await generateVoiceForChar(needGen[i])
+        if (error) break
+      }
+      if (!error) success = `已为 ${needGen.length} 个角色生成音色！`
+    } finally {
+      batchGeneratingDesign = false
+    }
+  }
+
+  // 当用户手动修改角色音色选择时，保存绑定
+  function onVoiceChange(c, voiceId) {
+    if (voiceId === '__auto_generate__') {
+      generateVoiceForChar(c)
+      return
+    }
+    c.voice_id = voiceId
+    saveBookRoleVoices()
   }
 
   async function batchGenerateAllVoices() {
@@ -447,10 +639,19 @@
 
   {#if analyzedChapterIdxs.length > 0}
     <div class="global-characters">
-      <h3>全局角色配置池 (共 {globalCharacters.length} 角色)</h3>
+      <div class="global-chars-header">
+        <h3>全局角色配置池 (共 {globalCharacters.length} 角色)</h3>
+        <button class="batch-design-btn" disabled={batchGeneratingDesign} onclick={batchGenerateDesignVoices}>
+          {#if batchGeneratingDesign}
+            ⏳ 生成中 ({genProgress.current}/{genProgress.total}) - {genProgress.currentChapter}
+          {:else}
+            🎲 一键为未分配角色生成音色
+          {/if}
+        </button>
+      </div>
       <div class="chars">
         {#each globalCharacters as c}
-          <div class="char-card" class:narrator-card={c.name === '旁白'}>
+          <div class="char-card" class:narrator-card={c.name === '旁白'} class:generated-card={voices.find(v => v.id === c.voice_id && v.source === 'generated')}>
             <div class="char-header">
               {#if c.name === '旁白'}
                 <span class="narrator-badge">📖 旁白</span>
@@ -459,11 +660,21 @@
               {#if c.name !== '旁白'}
                 <span class="char-role">({c.role})</span>
               {/if}
+              {#if voices.find(v => v.id === c.voice_id && v.source === 'generated')}
+                <span class="generated-badge">🔒 已生成</span>
+              {/if}
+              {#if generatingDesignFor[c.name]}
+                <span class="generating-badge">⏳ 生成中...</span>
+              {/if}
             </div>
-            <select bind:value={c.voice_id}>
+            {#if c.voice_design}
+              <div class="voice-design-hint" title={c.voice_design}>🎭 {c.voice_design.slice(0, 40)}{c.voice_design.length > 40 ? '...' : ''}</div>
+            {/if}
+            <select value={c.voice_id} onchange={(e) => onVoiceChange(c, e.target.value)}>
               <option value="">-- 跟随默认音色 --</option>
+              <option value="__auto_generate__">🎲 自动生成音色</option>
               {#each voices as v}
-                <option value={v.id}>{v.name}</option>
+                <option value={v.id}>{v.source === 'generated' ? '🔒 ' : ''}{v.name}</option>
               {/each}
             </select>
           </div>
@@ -623,8 +834,28 @@
     border-radius: 10px;
     border: 1px solid var(--accent-start);
   }
-  .global-characters h3 { color: var(--accent-start); margin-bottom: 12px; font-size: 1.1rem; }
-  .chars { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .global-chars-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .global-chars-header h3 { color: var(--accent-start); margin: 0; font-size: 1.1rem; }
+  .batch-design-btn {
+    padding: 6px 14px;
+    background: linear-gradient(135deg, #f093fb, #764ba2);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: opacity 0.2s;
+  }
+  .batch-design-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .chars { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
   .char-card {
     padding: 14px;
     background: var(--bg-secondary);
@@ -649,6 +880,15 @@
   .char-card.narrator-card:hover {
     box-shadow: 0 8px 20px rgba(245, 87, 108, 0.25);
   }
+  .char-card.generated-card {
+    border: 1px solid transparent;
+    background: linear-gradient(var(--bg-secondary), var(--bg-secondary)) padding-box,
+                linear-gradient(135deg, #667eea, #764ba2) border-box;
+    box-shadow: 0 4px 12px rgba(118, 75, 162, 0.15);
+  }
+  .char-card.generated-card:hover {
+    box-shadow: 0 8px 20px rgba(118, 75, 162, 0.25);
+  }
   .narrator-badge {
     background: linear-gradient(135deg, #f093fb, #f5576c);
     color: #fff;
@@ -658,9 +898,38 @@
     font-weight: 600;
     margin-right: 6px;
   }
+  .generated-badge {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    margin-left: 6px;
+  }
+  .generating-badge {
+    color: var(--accent-start);
+    font-size: 0.7rem;
+    margin-left: 6px;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .voice-design-hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: rgba(255,255,255,0.04);
+    padding: 4px 8px;
+    border-radius: 4px;
+    line-height: 1.3;
+    cursor: help;
+  }
   .char-header {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
   }
   .char-header strong { color: var(--text-primary); }
   .char-role { color: var(--text-secondary); font-size: 0.8rem; margin-left: 4px; }

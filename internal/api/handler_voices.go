@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -201,3 +203,93 @@ func (s *Server) evaluateVoice(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, report)
 }
+
+// generateVoiceDesign 根据文字描述（voice_design prompt）自动生成音色
+// 两步策略：先用 voicedesign 生成参考音频保存为 sample，后续合成走 voiceclone
+func (s *Server) generateVoiceDesign(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		DesignPrompt string `json:"design_prompt"`
+		PreviewText  string `json:"preview_text"`
+		SaveAsName   string `json:"save_as_name"`
+		Gender       string `json:"gender"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.DesignPrompt == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("design_prompt 不能为空"))
+		return
+	}
+	if req.PreviewText == "" {
+		req.PreviewText = "你好，这是自动生成的角色音色预览。"
+	}
+	if req.SaveAsName == "" {
+		req.SaveAsName = "auto-voice"
+	}
+
+	// Validate MiMo API key
+	if s.cfg.MiMo.APIKey == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("请先设置 MiMo API Key"))
+		return
+	}
+
+	mimoEngine, err := s.engineReg.Get("mimo")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("MiMo 引擎未注册"))
+		return
+	}
+	mimo, ok := mimoEngine.(*tts.MiMoEngine)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("MiMo 引擎类型错误"))
+		return
+	}
+
+	// Step 1: 调用 voicedesign 生成参考音频
+	audioData, format, err := mimo.SynthesizeDesign(r.Context(), req.PreviewText, req.DesignPrompt, model.TTSOptions{Format: "wav"})
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "429") || strings.Contains(msg, "Too many") {
+			msg = "MiMo API 限流，请稍等几秒后重试"
+		}
+		writeError(w, http.StatusTooManyRequests, fmt.Errorf(msg))
+		return
+	}
+
+	// Step 2: 保存参考音频到磁盘
+	uploadDir := s.cfg.Storage.UploadDir
+	os.MkdirAll(uploadDir, 0755)
+	sampleFileName := fmt.Sprintf("generated-%s-%d.%s", req.SaveAsName, time.Now().UnixMilli(), format)
+	samplePath := filepath.Join(uploadDir, sampleFileName)
+	if err := os.WriteFile(samplePath, audioData, 0644); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("保存参考音频失败: %w", err))
+		return
+	}
+
+	// Step 3: 创建 source="generated" 的 VoiceProfile
+	vp := model.VoiceProfile{
+		Name:         req.SaveAsName,
+		Source:       "generated",
+		Engine:       "mimo",
+		SamplePath:   samplePath,
+		DesignPrompt: req.DesignPrompt,
+		Description:  fmt.Sprintf("自动生成: %s", req.DesignPrompt),
+		Language:     "zh-CN",
+		Gender:       req.Gender,
+	}
+	if err := s.store.SaveVoiceProfile(&vp); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	log.Printf("🎤 Voice generated: name=%s id=%s sample=%s", vp.Name, vp.ID, samplePath)
+
+	// 返回 profile + base64 audio 供前端预览
+	audioB64 := base64.StdEncoding.EncodeToString(audioData)
+	writeJSON(w, map[string]any{
+		"voice_profile": vp,
+		"audio_data":    audioB64,
+		"audio_format":  format,
+	})
+}
+
