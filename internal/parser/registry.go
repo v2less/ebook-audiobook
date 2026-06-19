@@ -67,6 +67,13 @@ func (r *Registry) Parse(filePath string) (*model.Book, error) {
 		book.Chapters[i] = *cleaned
 	}
 
+	// Safety net: ensure all chapters have non-empty titles
+	for i := range book.Chapters {
+		if strings.TrimSpace(book.Chapters[i].Title) == "" {
+			book.Chapters[i].Title = fmt.Sprintf("Chapter %d", i+1)
+		}
+	}
+
 	return book, nil
 }
 

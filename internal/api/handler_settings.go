@@ -46,7 +46,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		result, err := importProjectJSON(projPath)
+		result, err := s.importProjectJSON(projPath)
 		if err != nil {
 			writeJSON(w, map[string]any{
 				"sfx_count": 0, "bgm_count": 0, "voice_count": 0,

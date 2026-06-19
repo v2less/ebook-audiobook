@@ -103,7 +103,14 @@ func (o *Orchestrator) ProduceAudiobook(ctx context.Context, bookID string, jobI
 	}
 
 	// Phase 2: Build voice profiles from character analysis
-	voiceProfiles := o.analyzer.BuildVoiceProfiles(knownCharacters)
+	customVoices, _ := o.store.ListVoiceProfiles()
+	var availableVoices []model.VoiceProfile
+	for _, p := range customVoices {
+		availableVoices = append(availableVoices, *p)
+	}
+	availableVoices = append(availableVoices, tts.MiMoPresetVoices...)
+
+	voiceProfiles := o.analyzer.BuildVoiceProfiles(knownCharacters, availableVoices)
 
 	// Phase 3: Synthesize all speech segments with character voices
 	splitter := tts.NewTextSplitter(1500)
@@ -134,9 +141,11 @@ func (o *Orchestrator) ProduceAudiobook(ctx context.Context, bookID string, jobI
 		opts.VoiceID = vp.VoiceID
 		opts.StyleDirective = seg.EmotionHint
 
-		// For narrator, use calm preset
+		// For narrator, if it wasn't matched (or isn't found), we use default but allow dynamic prompt
 		if seg.Type == "narration" {
-			opts.VoiceID = "mimo_default"
+			if _, ok := voiceMap[strings.ToLower(seg.Speaker)]; !ok {
+				opts.VoiceID = "mimo_default"
+			}
 			if seg.EmotionHint == "" {
 				opts.StyleDirective = "用平和自然的语气朗读，语速适中，如同深夜电台读故事"
 			}

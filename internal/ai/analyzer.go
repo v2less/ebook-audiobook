@@ -134,22 +134,58 @@ func mergeCharacters(new ScriptAnalysis, known []Character) ScriptAnalysis {
 	return new
 }
 
-// BuildVoiceProfiles converts LLM character analysis to voice profiles
-func (a *Analyzer) BuildVoiceProfiles(characters []Character) []model.VoiceProfile {
+// BuildVoiceProfiles converts LLM character analysis to voice profiles, matching against available voices
+func (a *Analyzer) BuildVoiceProfiles(characters []Character, availableVoices []model.VoiceProfile) []model.VoiceProfile {
 	var profiles []model.VoiceProfile
 	for _, c := range characters {
-		if c.Role == "narrator" || c.VoiceDesign == "" {
-			continue
+		// Try to match an available voice based on name, gender, or role
+		var matchedVoice *model.VoiceProfile
+		for _, v := range availableVoices {
+			// Exact match on name
+			if strings.EqualFold(v.Name, c.Name) {
+				matchedVoice = &v
+				break
+			}
+			// If it's a clone imported from project, its name might contain the character's role or name
+			if v.Source == "clone" && (strings.Contains(v.Name, c.Name) || (c.Role != "" && strings.Contains(v.Name, c.Role))) {
+				matchedVoice = &v
+				break
+			}
 		}
-		profiles = append(profiles, model.VoiceProfile{
-			Name:         c.Name,
-			Source:       "design",
-			Engine:       "mimo",
-			DesignPrompt: c.VoiceDesign,
-			Description:  fmt.Sprintf("%s, %s, %s. %s", c.Role, c.Gender, c.Age, c.Personality),
-			Language:     "zh-CN",
-			Gender:       c.Gender,
-		})
+
+		if matchedVoice == nil {
+			// Heuristic matching for presets if no direct match
+			for _, v := range availableVoices {
+				if v.Source == "preset" && strings.EqualFold(v.Gender, c.Gender) {
+					// Extremely naive heuristic: just take the first matching gender preset
+					// In a real app we might score them based on personality or let LLM choose.
+					matchedVoice = &v
+					break
+				}
+			}
+		}
+
+		if matchedVoice != nil {
+			vp := *matchedVoice
+			// Override name and description for the specific character context
+			vp.Name = c.Name
+			vp.Description = fmt.Sprintf("%s, %s, %s. %s", c.Role, c.Gender, c.Age, c.Personality)
+			vp.DesignPrompt = c.VoiceDesign // Keep the prompt just in case we need it
+			profiles = append(profiles, vp)
+		} else {
+			if c.VoiceDesign == "" && c.Role != "narrator" {
+				continue
+			}
+			profiles = append(profiles, model.VoiceProfile{
+				Name:         c.Name,
+				Source:       "design",
+				Engine:       "mimo",
+				DesignPrompt: c.VoiceDesign,
+				Description:  fmt.Sprintf("%s, %s, %s. %s", c.Role, c.Gender, c.Age, c.Personality),
+				Language:     "zh-CN",
+				Gender:       c.Gender,
+			})
+		}
 	}
 	return profiles
 }

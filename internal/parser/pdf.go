@@ -26,12 +26,25 @@ func (p *PDFParser) SupportedFormats() []string {
 
 // PDFClassification result from pdf-inspector detect-pdf
 type PDFClassification struct {
-	PDFType           string  `json:"pdf_type"`           // "text_based", "scanned", "image_based", "mixed"
+	PDFType           string  `json:"pdfType"`           // "TextBased", "Scanned", "Mixed"
 	Confidence        float64 `json:"confidence"`
-	PagesNeedingOCR   []int   `json:"pages_needing_ocr,omitempty"`
+	PageCount         int     `json:"pageCount,omitempty"`
+	PagesNeedingOCR   []int   `json:"pagesNeedingOcr,omitempty"`
+	HasEncodingIssues bool    `json:"hasEncodingIssues,omitempty"`
+	IsComplexLayout   bool    `json:"isComplexLayout,omitempty"`
 }
 
 func (p *PDFParser) Parse(filePath string) (*model.Book, error) {
+	// First, try to detect PDF issues to fail fast and provide a good error message
+	if classification, err := p.ClassifyPDF(filePath); err == nil && classification != nil {
+		if classification.HasEncodingIssues {
+			return nil, fmt.Errorf("PDF 存在字体编码问题，提取的文本会是乱码。请先使用 OCR 软件将其转换为标准文档。")
+		}
+		if classification.PageCount > 0 && len(classification.PagesNeedingOCR) > classification.PageCount/2 {
+			return nil, fmt.Errorf("此 PDF 为扫描版或图片格式（%d/%d 页需要 OCR）。请先使用 OCR 软件将其转换为标准文档。", len(classification.PagesNeedingOCR), classification.PageCount)
+		}
+	}
+
 	// 1. Try pdf-inspector (pdf2md) — fastest, best quality
 	book, err := p.parseViaPdfInspector(filePath)
 	if err == nil && len(book.Chapters) > 0 {

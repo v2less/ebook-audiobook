@@ -145,10 +145,21 @@ func (p *EPUBParser) parseDirect(filePath string) (*model.Book, error) {
 		if err != nil {
 			continue
 		}
-		text := stripHTMLTags(string(data))
+		htmlContent := string(data)
+		text := stripHTMLTags(htmlContent)
+
+		// Determine chapter title: spine.Title > HTML heading > fallback
+		title := spine.Title
+		if title == "" {
+			title = extractChapterTitleFromHTML(htmlContent)
+		}
+		if title == "" {
+			title = fmt.Sprintf("Chapter %d", i+1)
+		}
+
 		chapters = append(chapters, model.Chapter{
 			Index:   i,
-			Title:   spine.Title,
+			Title:   title,
 			Content: text,
 		})
 	}
@@ -273,6 +284,56 @@ func findManifestHref(content, id string) string {
 		return id + ".html"
 	}
 	return chunk[hrefStart : hrefStart+hrefEnd]
+}
+
+// extractChapterTitleFromHTML extracts a title from HTML content.
+// Priority: first <h1>-<h3> heading > <title> tag.
+func extractChapterTitleFromHTML(html string) string {
+	lower := strings.ToLower(html)
+
+	// Try heading tags h1, h2, h3
+	for _, tag := range []string{"h1", "h2", "h3"} {
+		openTag := "<" + tag
+		closeTag := "</" + tag + ">"
+		start := strings.Index(lower, openTag)
+		if start < 0 {
+			continue
+		}
+		// Find the end of the opening tag
+		gtIdx := strings.Index(lower[start:], ">")
+		if gtIdx < 0 {
+			continue
+		}
+		contentStart := start + gtIdx + 1
+		end := strings.Index(lower[contentStart:], closeTag)
+		if end < 0 {
+			continue
+		}
+		titleHTML := html[contentStart : contentStart+end]
+		// Strip any nested tags inside the heading
+		title := strings.TrimSpace(stripHTMLTags(titleHTML))
+		if title != "" {
+			return title
+		}
+	}
+
+	// Fallback: try <title> tag
+	titleStart := strings.Index(lower, "<title")
+	if titleStart >= 0 {
+		gtIdx := strings.Index(lower[titleStart:], ">")
+		if gtIdx >= 0 {
+			contentStart := titleStart + gtIdx + 1
+			end := strings.Index(lower[contentStart:], "</title>")
+			if end > 0 {
+				title := strings.TrimSpace(html[contentStart : contentStart+end])
+				if title != "" {
+					return title
+				}
+			}
+		}
+	}
+
+	return ""
 }
 
 func stripHTMLTags(html string) string {

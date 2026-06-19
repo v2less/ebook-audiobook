@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"ebook-audiobook/internal/model"
 )
 
 // ---- Library & Format handlers ----
@@ -43,7 +45,7 @@ func (s *Server) importLibrary(w http.ResponseWriter, r *http.Request) {
 	io.Copy(dst, file)
 	dst.Close()
 
-	result, err := importProjectJSON(projPath)
+	result, err := s.importProjectJSON(projPath)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -80,7 +82,7 @@ func (s *Server) getProjectJSONPath() string {
 }
 
 // importProjectJSON parses Unitale project JSON and extracts SFX/BGM/voices inline
-func importProjectJSON(jsonPath string) (map[string]any, error) {
+func (s *Server) importProjectJSON(jsonPath string) (map[string]any, error) {
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {
 		return nil, fmt.Errorf("read project file: %w", err)
@@ -110,7 +112,7 @@ func importProjectJSON(jsonPath string) (map[string]any, error) {
 		"errors_count": 0,
 	}
 
-	extract := func(items []json.RawMessage, dir string) int {
+	extract := func(items []json.RawMessage, dir string, isVoice bool) int {
 		os.MkdirAll(dir, 0755)
 		count := 0
 		for _, item := range items {
@@ -147,14 +149,30 @@ func importProjectJSON(jsonPath string) (map[string]any, error) {
 			}
 			if os.WriteFile(outPath, audioBytes, 0644) == nil {
 				count++
+				if isVoice && s.store != nil {
+					name := res.Name
+					if name == "" {
+						name = filename
+					}
+					// Remove extension for the name
+					name = strings.TrimSuffix(name, filepath.Ext(name))
+					vp := &model.VoiceProfile{
+						Name:       name,
+						Source:     "clone",
+						Engine:     "mimo",
+						SamplePath: outPath,
+						Language:   "zh-CN",
+					}
+					s.store.SaveVoiceProfile(vp)
+				}
 			}
 		}
 		return count
 	}
 
-	result["sfx_count"] = extract(proj.Libraries.SFX, "./data/sfx")
-	result["bgm_count"] = extract(proj.Libraries.BGM, "./data/bgm")
-	result["voice_count"] = extract(proj.Libraries.Voices, "./data/voices")
+	result["sfx_count"] = extract(proj.Libraries.SFX, "./data/sfx", false)
+	result["bgm_count"] = extract(proj.Libraries.BGM, "./data/bgm", false)
+	result["voice_count"] = extract(proj.Libraries.Voices, "./data/voices", true)
 
 	return result, nil
 }
@@ -170,7 +188,7 @@ func (s *Server) directImportNow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, fmt.Errorf("project file not found: %s (skipping import)", projPath))
 		return
 	}
-	result, err := importProjectJSON(projPath)
+	result, err := s.importProjectJSON(projPath)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
