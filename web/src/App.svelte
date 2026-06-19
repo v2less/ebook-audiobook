@@ -6,6 +6,7 @@
   import Settings from './lib/Settings.svelte'
   import ScriptEditor from './lib/ScriptEditor.svelte'
   import BookEditor from './lib/BookEditor.svelte'
+  import AIStudio from './lib/AIStudio.svelte'
 
   let tab = $state('upload')
   let selectedBook = $state(null)
@@ -41,14 +42,15 @@
     { id: 'upload', label: '📚 上传', icon: '📚' },
     { id: 'editor', label: '✏️ 校对', icon: '✏️' },
     { id: 'voices', label: '🎤 音色', icon: '🎤' },
-    { id: 'synthesize', label: '⚙️ 合成', icon: '⚙️' },
+    { id: 'aistudio', label: '🧠 智能编辑', icon: '🧠' },
+    { id: 'synthesize', label: '🚀 批量合成', icon: '🚀' },
     { id: 'jobs', label: '📋 任务', icon: '📋' },
     { id: 'settings', label: '🔧 设置', icon: '🔧' },
   ]
 
   function onBookSelected(book) {
     selectedBook = book
-    tab = 'synthesize'
+    tab = 'aistudio'
   }
 
   function onVoiceSelected(voice) {
@@ -88,6 +90,9 @@
     </div>
     <div style="display: {tab === 'voices' ? 'block' : 'none'}">
       <VoiceStudio onSelect={onVoiceSelected} />
+    </div>
+    <div style="display: {tab === 'aistudio' ? 'block' : 'none'}">
+      <AIStudio book={selectedBook} selectedVoice={selectedVoice} isActive={tab === 'aistudio'} />
     </div>
     <div style="display: {tab === 'synthesize' ? 'block' : 'none'}">
       <SynthesisConfig book={selectedBook} selectedVoice={selectedVoice} isActive={tab === 'synthesize'} />

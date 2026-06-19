@@ -1,11 +1,18 @@
 <script>
   import { api } from './api.js'
+  import { untrack } from 'svelte'
 
-  let { script = [], characters = [], voices = [], defaultVoiceId = 'mimo_default' } = $props()
+  let { 
+    script = [], 
+    characters = [], 
+    voices = [], 
+    defaultVoiceId = 'mimo_default',
+    audioUrls = {},
+    onAudioUrlsChange = () => {}
+  } = $props()
 
   let generating = $state(false)
   let currentGenerating = $state(-1)
-  let audioUrls = $state({})
   let playing = $state(-1)
   let audioElements = $state({})
   let exportProgress = $state('')
@@ -31,8 +38,7 @@
         format: 'wav',
       })
       const url = URL.createObjectURL(blob)
-      audioUrls[index] = url
-      audioUrls = { ...audioUrls }
+      onAudioUrlsChange({ ...audioUrls, [index]: url })
     } catch (e) {
       alert('合成失败: ' + e.message)
     } finally {
@@ -78,6 +84,13 @@
     playing = -1
   }
 
+  // Stop playing if script changes (e.g. switching chapter)
+  $effect(() => {
+    if (script) {
+      untrack(() => stopAll())
+    }
+  })
+
   // ---- Inline Edit: Text ----
   function startEditText(index) {
     editingLine = index
@@ -90,8 +103,9 @@
       // Invalidate cached audio so user regenerates with new text
       if (audioUrls[index]) {
         URL.revokeObjectURL(audioUrls[index])
-        delete audioUrls[index]
-        audioUrls = { ...audioUrls }
+        const newUrls = { ...audioUrls }
+        delete newUrls[index]
+        onAudioUrlsChange(newUrls)
       }
     }
     editingLine = -1
@@ -129,8 +143,9 @@
       // Invalidate cached audio
       if (audioUrls[index]) {
         URL.revokeObjectURL(audioUrls[index])
-        delete audioUrls[index]
-        audioUrls = { ...audioUrls }
+        const newUrls = { ...audioUrls }
+        delete newUrls[index]
+        onAudioUrlsChange(newUrls)
       }
     }
     editingSpeaker = -1
@@ -154,8 +169,9 @@
     // Invalidate cached audio
     if (audioUrls[index]) {
       URL.revokeObjectURL(audioUrls[index])
-      delete audioUrls[index]
-      audioUrls = { ...audioUrls }
+      const newUrls = { ...audioUrls }
+      delete newUrls[index]
+      onAudioUrlsChange(newUrls)
     }
   }
 
