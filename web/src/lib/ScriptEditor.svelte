@@ -138,7 +138,8 @@
       script[index].speaker = newName
       // Add to characters list if not existing
       if (!characters.find(c => c.name === newName)) {
-        characters.push({ name: newName, role: 'supporting', voice_design: '', gender: '', age: '', personality: '' })
+        const matched = voices.find(v => v.name === newName || v.id === newName)
+        characters.push({ name: newName, role: 'supporting', voice_design: '', gender: '', age: '', personality: '', voice_id: matched ? matched.id : '' })
       }
       // Invalidate cached audio
       if (audioUrls[index]) {

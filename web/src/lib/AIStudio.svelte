@@ -42,27 +42,41 @@
   loadData()
 
   $effect(() => {
+    if (voices.length > 0 && globalCharacters.length > 0) {
+      globalCharacters.forEach(c => {
+        if (!c.voice_id) {
+          const matched = voices.find(v => v.name === c.name || v.id === c.name)
+          if (matched) {
+            c.voice_id = matched.id
+          }
+        }
+      })
+    }
+  })
+
+  let lastBookId = $state('')
+  $effect(() => {
     if (book?.id) {
-      if (selectedBookId !== book.id) {
-        selectedChapterIdxs = []
-        globalCharacters = []
-        chapterScripts = {}
-        allAudioUrls = {}
-        analyzedChapterIdxs = []
-        activeAnalyzedChapterIdx = null
-      }
       selectedBookId = book.id
     }
     if (selectedVoice?.id) selectedVoiceId = selectedVoice.id
   })
 
-  const selectedBook = $derived(books.find(b => b.id === selectedBookId))
-
   $effect(() => {
-    if (selectedBookId) {
-       // Just resetting state when changing book directly
+    if (selectedBookId !== lastBookId) {
+      lastBookId = selectedBookId
+      selectedChapterIdxs = []
+      globalCharacters = [
+        { name: '旁白', role: 'narrator', voice_design: '小说的主干旁白叙述', gender: 'neutral', age: 'adult', personality: 'calm', voice_id: '' }
+      ]
+      chapterScripts = {}
+      allAudioUrls = {}
+      analyzedChapterIdxs = []
+      activeAnalyzedChapterIdx = null
     }
   })
+
+  const selectedBook = $derived(books.find(b => b.id === selectedBookId))
 
   let wasActive = $state(false)
   $effect(() => {
@@ -162,9 +176,9 @@
     const seen = new Set()
     arr.forEach(item => {
       const name = item.role_name
-      if (name && name !== '旁白' && !seen.has(name)) {
+      if (name && !seen.has(name)) {
         seen.add(name)
-        chars.push({ name, role: 'supporting', voice_design: '', gender: '', age: '', personality: '', voice_id: '' })
+        chars.push({ name, role: name === '旁白' ? 'narrator' : 'supporting', voice_design: '', gender: '', age: '', personality: '', voice_id: '' })
       }
     })
 
@@ -436,9 +450,15 @@
       <h3>全局角色配置池 (共 {globalCharacters.length} 角色)</h3>
       <div class="chars">
         {#each globalCharacters as c}
-          <div class="char-card">
+          <div class="char-card" class:narrator-card={c.name === '旁白'}>
             <div class="char-header">
-              <strong>{c.name}</strong> <span class="char-role">({c.role})</span>
+              {#if c.name === '旁白'}
+                <span class="narrator-badge">📖 旁白</span>
+              {/if}
+              <strong>{c.name}</strong> 
+              {#if c.name !== '旁白'}
+                <span class="char-role">({c.role})</span>
+              {/if}
             </div>
             <select bind:value={c.voice_id}>
               <option value="">-- 跟随默认音色 --</option>
@@ -606,16 +626,44 @@
   .global-characters h3 { color: var(--accent-start); margin-bottom: 12px; font-size: 1.1rem; }
   .chars { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
   .char-card {
-    padding: 12px;
+    padding: 14px;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: 10px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
+    transition: all 0.25s ease;
+  }
+  .char-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+    border-color: var(--accent-start);
+  }
+  .char-card.narrator-card {
+    border: 1px solid transparent;
+    background: linear-gradient(var(--bg-secondary), var(--bg-secondary)) padding-box,
+                linear-gradient(135deg, #f093fb, #f5576c) border-box;
+    box-shadow: 0 4px 12px rgba(245, 87, 108, 0.15);
+  }
+  .char-card.narrator-card:hover {
+    box-shadow: 0 8px 20px rgba(245, 87, 108, 0.25);
+  }
+  .narrator-badge {
+    background: linear-gradient(135deg, #f093fb, #f5576c);
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .char-header {
+    display: flex;
+    align-items: center;
   }
   .char-header strong { color: var(--text-primary); }
-  .char-role { color: var(--text-secondary); font-size: 0.8rem; }
+  .char-role { color: var(--text-secondary); font-size: 0.8rem; margin-left: 4px; }
   .char-card select { padding: 6px; font-size: 0.85rem; }
 
   .workspace-split {
