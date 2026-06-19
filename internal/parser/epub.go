@@ -153,6 +153,30 @@ func (p *EPUBParser) parseDirect(filePath string) (*model.Book, error) {
 		if title == "" {
 			title = extractChapterTitleFromHTML(htmlContent)
 		}
+		
+		// If extracted title is identical to the book's title (often hardcoded by Calibre in <title>),
+		// or is a generic placeholder, discard it to allow for a better fallback.
+		if title == book.Title || title == "未知" || strings.ToLower(title) == "unknown" {
+			title = ""
+		}
+		
+		// Intelligent fallback: use the first non-empty line of the chapter text.
+		if title == "" && len(text) > 0 {
+			lines := strings.Split(text, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if len(line) > 0 {
+					runes := []rune(line)
+					if len(runes) > 50 {
+						title = string(runes[:50]) + "..."
+					} else {
+						title = line
+					}
+					break
+				}
+			}
+		}
+
 		if title == "" {
 			title = fmt.Sprintf("Chapter %d", i+1)
 		}
@@ -272,18 +296,28 @@ func findManifestHref(content, id string) string {
 	if idx < 0 {
 		return id + ".html"
 	}
-	// Go back to find the item element
-	chunk := content[max(0, idx-200):idx]
-	hrefIdx := strings.LastIndex(chunk, `href="`)
+	
+	tagStart := strings.LastIndex(content[:idx], "<item")
+	if tagStart < 0 {
+		return id + ".html"
+	}
+	tagEnd := strings.Index(content[idx:], ">")
+	if tagEnd < 0 {
+		return id + ".html"
+	}
+	
+	itemTag := content[tagStart : idx+tagEnd+1]
+	
+	hrefIdx := strings.Index(itemTag, `href="`)
 	if hrefIdx < 0 {
 		return id + ".html"
 	}
 	hrefStart := hrefIdx + len(`href="`)
-	hrefEnd := strings.Index(chunk[hrefStart:], `"`)
+	hrefEnd := strings.Index(itemTag[hrefStart:], `"`)
 	if hrefEnd < 0 {
 		return id + ".html"
 	}
-	return chunk[hrefStart : hrefStart+hrefEnd]
+	return itemTag[hrefStart : hrefStart+hrefEnd]
 }
 
 // extractChapterTitleFromHTML extracts a title from HTML content.

@@ -8,6 +8,8 @@
   let editingBook = $state(null)
   
   let selectedChapterIdx = $state(0)
+  let selectedChaptersForDelete = $state([])
+  let lastSelectedIdx = $state(-1)
   let saving = $state(false)
   let statusMsg = $state('')
 
@@ -37,6 +39,8 @@
         // Deep copy so we can edit without affecting original until saved
         editingBook = JSON.parse(JSON.stringify(book))
         selectedChapterIdx = 0
+        selectedChaptersForDelete = []
+        lastSelectedIdx = -1
       }
     } else {
       editingBook = null
@@ -113,6 +117,74 @@
     statusMsg = `章节已删除`
   }
 
+  function handleRowClick(i, e) {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      e.preventDefault()
+      toggleChapterSelection(i, e)
+    } else {
+      selectedChapterIdx = i
+    }
+  }
+
+  function toggleChapterSelection(i, e) {
+    e.stopPropagation()
+    const isChecked = !selectedChaptersForDelete.includes(i)
+
+    if (e.shiftKey && lastSelectedIdx !== -1) {
+      const min = Math.min(lastSelectedIdx, i)
+      const max = Math.max(lastSelectedIdx, i)
+      
+      const newSelection = new Set(selectedChaptersForDelete)
+      for (let j = min; j <= max; j++) {
+        if (isChecked) {
+          newSelection.add(j)
+        } else {
+          newSelection.delete(j)
+        }
+      }
+      selectedChaptersForDelete = Array.from(newSelection)
+    } else {
+      if (isChecked) {
+        selectedChaptersForDelete = [...selectedChaptersForDelete, i]
+      } else {
+        selectedChaptersForDelete = selectedChaptersForDelete.filter(idx => idx !== i)
+      }
+    }
+    lastSelectedIdx = i
+  }
+
+  function toggleSelectAllDelete() {
+    if (!editingBook) return
+    if (selectedChaptersForDelete.length === editingBook.chapters.length) {
+      selectedChaptersForDelete = []
+      lastSelectedIdx = -1
+    } else {
+      selectedChaptersForDelete = editingBook.chapters.map((_, i) => i)
+      lastSelectedIdx = editingBook.chapters.length - 1
+    }
+  }
+
+  function bulkDeleteChapters() {
+    if (!editingBook || selectedChaptersForDelete.length === 0) return
+    if (selectedChaptersForDelete.length === editingBook.chapters.length) {
+      alert("无法删除所有章节")
+      return
+    }
+    if (!confirm(`确定要删除选中的 ${selectedChaptersForDelete.length} 个章节吗？`)) return
+
+    editingBook.chapters = editingBook.chapters.filter((_, i) => !selectedChaptersForDelete.includes(i))
+    
+    editingBook.chapters.forEach((c, i) => c.index = i)
+    
+    if (selectedChapterIdx >= editingBook.chapters.length) {
+      selectedChapterIdx = editingBook.chapters.length - 1
+    }
+    
+    selectedChaptersForDelete = []
+    lastSelectedIdx = -1
+    statusMsg = `已批量删除章节`
+  }
+
   async function saveChanges() {
     if (!editingBook) return
     saving = true
@@ -143,6 +215,8 @@
       if (selectedChapterIdx >= editingBook.chapters.length) {
         selectedChapterIdx = 0
       }
+      selectedChaptersForDelete = []
+      lastSelectedIdx = -1
       statusMsg = '已重置为最后一次保存的状态'
     }
   }
@@ -177,14 +251,30 @@
     <div class="workspace">
       <!-- Left Sidebar: TOC -->
       <div class="sidebar">
-        <h3>目录树 ({editingBook.chapters.length} 章)</h3>
+        <div class="sidebar-header">
+          <h3>目录树 ({editingBook.chapters.length} 章)</h3>
+          <div class="sidebar-actions">
+            <button class="btn-small" onclick={toggleSelectAllDelete}>
+              {selectedChaptersForDelete.length === editingBook.chapters.length ? '取消全选' : '全选'}
+            </button>
+            <button class="btn-small danger" disabled={selectedChaptersForDelete.length === 0} onclick={bulkDeleteChapters}>
+              批量删除
+            </button>
+          </div>
+        </div>
         <div class="toc-list">
           {#each editingBook.chapters as ch, i}
             <div 
               class="toc-item" 
               class:active={selectedChapterIdx === i}
-              onclick={() => selectedChapterIdx = i}
+              onclick={(e) => handleRowClick(i, e)}
             >
+              <input 
+                type="checkbox" 
+                class="toc-checkbox"
+                checked={selectedChaptersForDelete.includes(i)} 
+                onclick={(e) => toggleChapterSelection(i, e)} 
+              />
               <div class="toc-idx">{i}</div>
               <div class="toc-title" title={ch.title}>{ch.title}</div>
               <div class="toc-count">{ch.content?.length || 0} 字</div>
@@ -274,10 +364,30 @@
     flex-direction: column;
     background: var(--bg-secondary);
   }
-  .sidebar h3 {
-    margin: 0; padding: 12px 16px; font-size: 0.95rem; font-weight: 600;
+  .sidebar-header {
+    display: flex;
+    flex-direction: column;
     border-bottom: 1px solid var(--border-color);
   }
+  .sidebar-header h3 {
+    margin: 0; padding: 12px 16px 8px; font-size: 0.95rem; font-weight: 600;
+  }
+  .sidebar-actions {
+    display: flex; gap: 8px; padding: 0 16px 12px;
+  }
+  .btn-small {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+  }
+  .btn-small.danger { color: var(--danger); }
+  .btn-small.danger:hover:not(:disabled) { background: rgba(255, 71, 87, 0.1); border-color: var(--danger); }
+  .btn-small:disabled { opacity: 0.5; cursor: not-allowed; }
+  .toc-checkbox { margin: 0; cursor: pointer; }
   .toc-list {
     flex: 1; overflow-y: auto;
   }
