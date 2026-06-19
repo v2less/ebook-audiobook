@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"ebook-audiobook/internal/model"
+	"ebook-audiobook/internal/tts"
 )
 
 // ---- Quick Synthesis handlers ----
@@ -34,13 +35,26 @@ func (s *Server) synthesizeSingle(w http.ResponseWriter, r *http.Request) {
 		req.VoiceID = "mimo_default"
 	}
 
-	vp := &model.VoiceProfile{ID: req.VoiceID, Engine: "mimo", Source: "preset", VoiceID: req.VoiceID}
 	// Try DB first
-	if dbVp, err := s.store.GetVoiceProfile(req.VoiceID); err == nil {
-		vp = dbVp
+	vp, err := s.store.GetVoiceProfile(req.VoiceID)
+	if err != nil {
+		// Try preset voices
+		for _, p := range tts.MiMoPresetVoices {
+			if p.ID == req.VoiceID || p.VoiceID == req.VoiceID {
+				c := p
+				vp = &c
+				break
+			}
+		}
 	}
+
+	if vp == nil {
+		// Fallback
+		vp = &model.VoiceProfile{ID: req.VoiceID, Engine: "mimo", Source: "preset", VoiceID: req.VoiceID}
+	}
+
 	opts := model.TTSOptions{
-		VoiceID:        req.VoiceID,
+		VoiceID:        vp.VoiceID,
 		Format:         req.Format,
 		StyleDirective: req.EmotionHint,
 	}
