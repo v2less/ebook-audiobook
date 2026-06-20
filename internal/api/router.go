@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -94,6 +96,21 @@ func (s *Server) setupRouter() {
 
 		// Library import
 		r.Post("/library/import", s.importLibrary)
+	})
+
+	// Serve static frontend files (SPA)
+	fs := http.FileServer(http.Dir("web/dist"))
+	r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
+		path := filepath.Join("web/dist", req.URL.Path)
+		if info, err := os.Stat(path); os.IsNotExist(err) || info.IsDir() {
+			if req.URL.Path != "/" && !os.IsNotExist(err) {
+				fs.ServeHTTP(w, req)
+				return
+			}
+			http.ServeFile(w, req, filepath.Join("web/dist", "index.html"))
+			return
+		}
+		fs.ServeHTTP(w, req)
 	})
 
 	s.router = r

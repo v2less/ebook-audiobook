@@ -1,6 +1,6 @@
 # Stage 1: Build Go server
-FROM golang:1.23-alpine AS go-builder
-RUN apk add --no-cache gcc musl-dev sqlite-dev
+FROM golang:1.23-bookworm AS go-builder
+RUN apt-get update && apt-get install -y gcc libc-dev libsqlite3-dev
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download || true
@@ -16,20 +16,21 @@ COPY web/ ./
 RUN npm run build
 
 # Stage 3: Runtime
-FROM alpine:3.20
-RUN apk add --no-cache \
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     tzdata \
-    sqlite \
+    sqlite3 \
     ffmpeg \
     nodejs \
     npm \
     python3 \
-    py3-pip \
+    python3-pip \
     calibre \
     poppler-utils \
     unzip \
-    curl
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install epub2md globally
 RUN npm install -g epub2md

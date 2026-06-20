@@ -11,6 +11,8 @@ services:
     environment:
       - MIMO_API_KEY=${MIMO_API_KEY:-}
       - CONFIG_PATH=/app/configs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   # Optional: RTVC service (uncomment if using local voice cloning)
