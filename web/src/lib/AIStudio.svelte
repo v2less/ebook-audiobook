@@ -31,6 +31,8 @@
   // 自动生成音色相关状态
   let generatingDesignFor = $state({}) // { charName: true } 正在生成的角色
   let batchGeneratingDesign = $state(false)
+  let playingVoiceId = $state(null)
+  let audioPlayer = null
 
   async function loadData() {
     try {
@@ -443,6 +445,47 @@
     saveBookRoleVoices()
   }
 
+  async function previewVoice(c) {
+    if (!c.voice_id) return
+    if (playingVoiceId === c.voice_id && audioPlayer) {
+      audioPlayer.pause()
+      playingVoiceId = null
+      return
+    }
+    
+    try {
+      if (audioPlayer) {
+        audioPlayer.pause()
+      }
+      
+      const blob = await api.postBlob('/api/v1/synthesis/single', {
+        text: '你好，这是我为角色' + c.name + '生成的音色。',
+        voice_id: c.voice_id,
+        emotion_hint: '平静语气',
+        format: 'wav',
+      })
+      
+      const url = URL.createObjectURL(blob)
+      audioPlayer = new Audio(url)
+      playingVoiceId = c.voice_id
+      
+      audioPlayer.onended = () => {
+        playingVoiceId = null
+        URL.revokeObjectURL(url)
+      }
+      audioPlayer.play()
+    } catch(e) {
+      error = '试听失败: ' + e.message
+      playingVoiceId = null
+    }
+  }
+
+  function regenerateVoice(c) {
+    if (confirm(`确定要为角色 ${c.name} 重新生成音色吗？这会覆盖之前的音色。`)) {
+      generateVoiceForChar(c)
+    }
+  }
+
   async function batchGenerateAllVoices() {
     generatingVoices = true
     error = ''
@@ -670,13 +713,25 @@
             {#if c.voice_design}
               <div class="voice-design-hint" title={c.voice_design}>🎭 {c.voice_design.slice(0, 40)}{c.voice_design.length > 40 ? '...' : ''}</div>
             {/if}
-            <select value={c.voice_id} onchange={(e) => onVoiceChange(c, e.target.value)}>
-              <option value="">-- 跟随默认音色 --</option>
-              <option value="__auto_generate__">🎲 自动生成音色</option>
-              {#each voices as v}
-                <option value={v.id}>{v.source === 'generated' ? '🔒 ' : ''}{v.name}</option>
-              {/each}
-            </select>
+            <div class="voice-controls">
+              <select value={c.voice_id} onchange={(e) => onVoiceChange(c, e.target.value)}>
+                <option value="">-- 跟随默认音色 --</option>
+                <option value="__auto_generate__">🎲 自动生成音色</option>
+                {#each voices as v}
+                  <option value={v.id}>{v.source === 'generated' ? '🔒 ' : ''}{v.name}</option>
+                {/each}
+              </select>
+              
+              {#if c.voice_id}
+                <button class="icon-btn" title={playingVoiceId === c.voice_id ? "停止试听" : "试听音色"} onclick={() => previewVoice(c)}>
+                  {playingVoiceId === c.voice_id ? '⏹️' : '▶️'}
+                </button>
+              {/if}
+              
+              {#if voices.find(v => v.id === c.voice_id && v.source === 'generated')}
+                <button class="icon-btn" title="重新生成" onclick={() => regenerateVoice(c)}>🔄</button>
+              {/if}
+            </div>
           </div>
         {/each}
       </div>
@@ -933,7 +988,32 @@
   }
   .char-header strong { color: var(--text-primary); }
   .char-role { color: var(--text-secondary); font-size: 0.8rem; margin-left: 4px; }
-  .char-card select { padding: 6px; font-size: 0.85rem; }
+  
+  .voice-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .voice-controls select { 
+    flex-grow: 1;
+    padding: 6px; 
+    font-size: 0.85rem; 
+  }
+  .icon-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  .icon-btn:hover {
+    background: var(--bg-secondary);
+    border-color: var(--accent-start);
+  }
 
   .workspace-split {
     display: flex;
