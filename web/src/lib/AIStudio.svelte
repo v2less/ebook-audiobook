@@ -170,39 +170,41 @@
     }
     text = text.replace(/```json\n?/gi, '').replace(/```/g, '').trim()
 
-    let arr = null
-    function fixJson(s) {
-      s = s.replace(/,\s*([}\]])/g, '$1')
-      s = s.replace(/\\(?!["\\\/bfnrtu0-9])/g, '\\\\')
-      return s
-    }
+	    let arr = null
+	    const rawPreview = text.slice(0, 200).replace(/\n/g, '\\n')
+	    function fixJson(s) {
+	      s = s.replace(/,\s*([}\]])/g, '$1')
+	      s = s.replace(/\\(?!["\\\/bfnrtu0-9])/g, '\\\\')
+	      return s
+	    }
 
-    try { arr = JSON.parse(fixJson(text)) } catch (e1) {}
+	    let parseErr = ''
+	    try { arr = JSON.parse(fixJson(text)) } catch (e1) { parseErr = e1.message }
 
-    if (!Array.isArray(arr)) {
-      let match = text.match(/\[\s*\{[\s\S]*?\}\s*\]/)
-      if (match) try { arr = JSON.parse(fixJson(match[0])) } catch(e) {}
-    }
-    
-    if (!Array.isArray(arr)) {
-      const start = text.indexOf('[')
-      if (start < 0) throw new Error('No JSON array. Raw: ' + text.slice(0, 300))
-      let depth = 0, end = -1, inStr = false
-      for (let i = start; i < text.length; i++) {
-        const ch = text[i]
-        if (inStr) {
-          if (ch === '\\') { i++; continue }
-          if (ch === '"') inStr = false
-          continue
-        }
-        if (ch === '"') { inStr = true; continue }
-        if (ch === '[') depth++
-        else if (ch === ']') { depth--; if (depth === 0) { end = i; break } }
-      }
-      if (end < 0) throw new Error('Unclosed bracket.')
-      try { arr = JSON.parse(fixJson(text.slice(start, end + 1))) }
-      catch(e2) { throw new Error('JSON parse error') }
-    }
+	    if (!Array.isArray(arr)) {
+	      let match = text.match(/\[\s*\{[\s\S]*?\}\s*\]/)
+	      if (match) try { arr = JSON.parse(fixJson(match[0])) } catch(e) {}
+	    }
+	    
+	    if (!Array.isArray(arr)) {
+	      const start = text.indexOf('[')
+	      if (start < 0) throw new Error('No JSON array found. LLM returned: ' + rawPreview)
+	      let depth = 0, end = -1, inStr = false
+	      for (let i = start; i < text.length; i++) {
+	        const ch = text[i]
+	        if (inStr) {
+	          if (ch === '\\') { i++; continue }
+	          if (ch === '"') inStr = false
+	          continue
+	        }
+	        if (ch === '"') { inStr = true; continue }
+	        if (ch === '[') depth++
+	        else if (ch === ']') { depth--; if (depth === 0) { end = i; break } }
+	      }
+	      if (end < 0) throw new Error('Unclosed bracket. LLM returned: ' + rawPreview)
+	      try { arr = JSON.parse(fixJson(text.slice(start, end + 1))) }
+	      catch(e2) { throw new Error('JSON parse error' + (parseErr ? ' (' + parseErr + ')' : '') + '. LLM returned: ' + rawPreview) }
+	    }
     
     if (!Array.isArray(arr)) throw new Error('Not an array')
 

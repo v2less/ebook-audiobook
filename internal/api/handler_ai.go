@@ -50,7 +50,7 @@ func (s *Server) llmProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("📨 LLM response: %d bytes, preview: %.200s", len(reply), reply)
+	log.Printf("📨 LLM response: %d bytes, preview: %.500s", len(reply), reply)
 	writeJSON(w, map[string]string{"reply": reply})
 }
 

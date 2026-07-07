@@ -146,7 +146,8 @@ func (c *Client) chat(ctx context.Context, messages []chatMessage) (string, erro
 	reqBody := chatRequest{
 		Model:       c.model,
 		Messages:    messages,
-		Temperature: 0.3, // Low temperature for structured output
+		Temperature: 0.3,
+		MaxTokens:   16384,
 	}
 
 	payload, err := json.Marshal(reqBody)
@@ -293,6 +294,7 @@ type chatRequest struct {
 	Model       string        `json:"model"`
 	Messages    []chatMessage `json:"messages"`
 	Temperature float64       `json:"temperature"`
+	MaxTokens   int           `json:"max_tokens"`
 }
 
 type chatResponse struct {

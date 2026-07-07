@@ -79,6 +79,12 @@ func (p *EPUBParser) buildBookFromMarkdownFiles(dir string, entries []os.DirEntr
 		FileName: filepath.Base(srcPath),
 	}
 
+	const minContentLen = 100 // 跳过封面/纯图片页等无效章节
+
+	logf := func(format string, args ...interface{}) {
+		fmt.Printf("[epub] "+format+"\n", args...)
+	}
+
 	var chapters []model.Chapter
 	idx := 0
 	for _, entry := range entries {
@@ -87,16 +93,45 @@ func (p *EPUBParser) buildBookFromMarkdownFiles(dir string, entries []os.DirEntr
 		}
 		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
 		if err != nil {
+			logf("skip %s: read error: %v", entry.Name(), err)
 			continue
 		}
 		content := string(data)
-		title := strings.TrimSuffix(entry.Name(), ".md")
-		chapters = append(chapters, model.Chapter{
-			Index:   idx,
-			Title:   title,
-			Content: content,
-		})
-		idx++
+
+		// 跳过过短的文件（封面图片页、空白页等）
+		if len(content) < minContentLen {
+			logf("skip %s: too short (%d bytes)", entry.Name(), len(content))
+			continue
+		}
+
+		// 跳过目录页（全是 [标题](./xxx.md#xxx) 链接，无正文内容）
+		if isTOCPage(content) {
+			logf("skip %s: TOC page", entry.Name())
+			continue
+		}
+
+		// 如果文件内容包含标题标记，按标题拆分为多个子章节
+		// （epub2md 经常将多个章节合并到一个 .md 文件中）
+		if strings.Contains(content, "\n#") || strings.HasPrefix(content, "#") {
+			subChapters := splitByHeadings(content, strings.TrimSuffix(entry.Name(), ".md"))
+			logf("%s: split into %d sub-chapters", entry.Name(), len(subChapters))
+			for _, ch := range subChapters {
+				if len(ch.Content) < minContentLen {
+					logf("  skip sub-chapter [%s]: too short (%d chars)", ch.Title, len(ch.Content))
+					continue
+				}
+				ch.Index = idx
+				chapters = append(chapters, ch)
+				idx++
+			}
+		} else {
+			chapters = append(chapters, model.Chapter{
+				Index:   idx,
+				Title:   strings.TrimSuffix(entry.Name(), ".md"),
+				Content: content,
+			})
+			idx++
+		}
 	}
 
 	if len(chapters) == 0 {
@@ -107,6 +142,26 @@ func (p *EPUBParser) buildBookFromMarkdownFiles(dir string, entries []os.DirEntr
 	book.Title = chapters[0].Title
 	book.Chapters = chapters
 	return book, nil
+}
+
+// isTOCPage 检测内容是否为目录页（全是 [标题](./xxx.md#xxx) 链接格式，无正文）
+func isTOCPage(content string) bool {
+	// 移除空行后检查：如果大部分行都是 markdown 链接格式 [text](url)
+	lines := strings.Split(content, "\n")
+	linkLines := 0
+	nonEmptyLines := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		nonEmptyLines++
+		if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "](./") {
+			linkLines++
+		}
+	}
+	// 如果非空行中 80% 以上是链接行，判定为目录页
+	return nonEmptyLines > 2 && float64(linkLines)/float64(nonEmptyLines) > 0.8
 }
 
 // parseDirect is a simplified direct EPUB parser using unzip + XML parsing
