@@ -136,17 +136,91 @@
     }
   }
 
-  async function analyzeSingleChapter(chapter, idx) {
-	    const titlePrefix = chapter.title ? chapter.title + '\n\n' : ''
-	    // 限制输入长度，避免 LLM 输出被截断
-	    // （输出需要包含原文的全部 JSON 重排，长度接近输入，超出模型限制会导致截断）
-	    const rawText = (titlePrefix + (chapter.content || '')).slice(0, 8000)
-	    if (!rawText.trim()) throw new Error('No text content in book.')
-	    if (rawText.length < 50) {
-	      throw new Error('Text too short (' + rawText.length + ' chars). The parser may have failed.')
-	    }
+  // 将文本在句末标点处断开，每段不超过 maxLen 字符
+  function splitTextAtSentence(text, maxLen) {
+    if (text.length <= maxLen) return [text]
+    const SENTENCE_ENDS = /[。！？!?\n]{1,3}/g
+    const chunks = []
+    let lastEnd = 0
+    let match
+    while ((match = SENTENCE_ENDS.exec(text)) !== null) {
+      const end = match.index + match[0].length
+      if (end - lastEnd >= maxLen) {
+        chunks.push(text.slice(lastEnd, match.index + 1))
+        lastEnd = match.index + 1
+      }
+    }
+    if (lastEnd < text.length) {
+      chunks.push(text.slice(lastEnd))
+    }
+    // Merge small trailing chunks
+    if (chunks.length > 1 && chunks[chunks.length - 1].length < 200) {
+      chunks[chunks.length - 2] += chunks.pop()
+    }
+    return chunks.length === 0 ? [text] : chunks
+  }
 
-	    let sp = `你的任务是将给定小说内容拆分为台词和旁白，输出严格JSON数组。
+  // 解析 LLM 返回的 JSON 数组（含截断恢复）
+  function parseScriptArray(text) {
+    const rawPreview = text.slice(0, 200).replace(/\n/g, '\\n')
+    function fixJson(s) {
+      s = s.replace(/,\s*([}\]])/g, '$1')
+      s = s.replace(/\\(?!["\\\/bfnrtu0-9])/g, '\\\\')
+      return s
+    }
+
+    let arr = null
+    let parseErr = ''
+    try { arr = JSON.parse(fixJson(text)) } catch (e1) { parseErr = e1.message }
+
+    if (!Array.isArray(arr)) {
+      let match = text.match(/\[\s*\{[\s\S]*?\}\s*\]/)
+      if (match) try { arr = JSON.parse(fixJson(match[0])) } catch(e) {}
+    }
+    
+    if (!Array.isArray(arr)) {
+      const start = text.indexOf('[')
+      if (start < 0) throw new Error('No JSON array found. LLM: ' + rawPreview)
+      let depth = 0, end = -1, inStr = false
+      for (let i = start; i < text.length; i++) {
+        const ch = text[i]
+        if (inStr) { if (ch === '\\') { i++; continue }; if (ch === '"') inStr = false; continue }
+        if (ch === '"') { inStr = true; continue }
+        if (ch === '[') depth++
+        else if (ch === ']') { depth--; if (depth === 0) { end = i; break } }
+      }
+      if (end < 0) {
+        const lastObj = text.lastIndexOf('}')
+        if (lastObj > start) {
+          let recovered = text.slice(start, lastObj + 1)
+          if ((recovered.match(/"/g) || []).length % 2 !== 0) recovered += '"'
+          recovered += ']'
+          try { arr = JSON.parse(fixJson(recovered)) } catch(e) {}
+        }
+        if (!Array.isArray(arr)) throw new Error('Response truncated. LLM: ' + rawPreview)
+      } else {
+        try { arr = JSON.parse(fixJson(text.slice(start, end + 1))) }
+        catch(e2) { throw new Error('JSON parse error' + (parseErr ? ' (' + parseErr + ')' : '') + '. LLM: ' + rawPreview) }
+      }
+    }
+    
+    if (!Array.isArray(arr)) throw new Error('Not an array')
+    return arr
+  }
+
+  async function analyzeSingleChapter(chapter, idx) {
+    const titlePrefix = chapter.title ? chapter.title + '\n\n' : ''
+    const fullText = titlePrefix + (chapter.content || '')
+    if (!fullText.trim()) throw new Error('No text content in book.')
+    if (fullText.length < 50) {
+      throw new Error('Text too short (' + fullText.length + ' chars). The parser may have failed.')
+    }
+
+    // 将长文本按 ~8000 字符分块（在句末标点处断开，避免截断句子）
+    const MAX_CHUNK = 8000
+    const chunks = splitTextAtSentence(fullText, MAX_CHUNK)
+
+    let sp = `你的任务是将给定小说内容拆分为台词和旁白，输出严格JSON数组。
 输出格式：
 [
   {"type":"dialogue","role_name":"角色名","text_content":"台词","emotion":"情绪","intensity":"强度","break_duration":0},
@@ -164,91 +238,55 @@
       }
     } catch(e) {}
 
-	    const res = await api.post('/api/v1/ai/llm-proxy', {
-	      system_prompt: sp,
-	      user_prompt: '请分析以下文本并输出JSON数组：\n\n' + rawText,
-    })
-    
-    let text = res.reply || ''
-    if (!text.trim()) {
-      throw new Error('LLM returned empty response.')
-    }
-    text = text.replace(/```json\n?/gi, '').replace(/```/g, '').trim()
+    // Process each chunk and merge results
+    const allScripts = []
+    const allChars = []
+    const seenCharNames = new Set()
 
-	    let arr = null
-	    const rawPreview = text.slice(0, 200).replace(/\n/g, '\\n')
-	    function fixJson(s) {
-	      s = s.replace(/,\s*([}\]])/g, '$1')
-	      s = s.replace(/\\(?!["\\\/bfnrtu0-9])/g, '\\\\')
-	      return s
-	    }
+    for (let ci = 0; ci < chunks.length; ci++) {
+      const chunk = chunks[ci]
+      if (!chunk.trim()) continue
 
-	    let parseErr = ''
-	    try { arr = JSON.parse(fixJson(text)) } catch (e1) { parseErr = e1.message }
-
-	    if (!Array.isArray(arr)) {
-	      let match = text.match(/\[\s*\{[\s\S]*?\}\s*\]/)
-	      if (match) try { arr = JSON.parse(fixJson(match[0])) } catch(e) {}
-	    }
-	    
-	    if (!Array.isArray(arr)) {
-	      const start = text.indexOf('[')
-	      if (start < 0) throw new Error('No JSON array found. LLM returned: ' + rawPreview)
-	      let depth = 0, end = -1, inStr = false
-	      for (let i = start; i < text.length; i++) {
-	        const ch = text[i]
-	        if (inStr) {
-	          if (ch === '\\') { i++; continue }
-	          if (ch === '"') inStr = false
-	          continue
-	        }
-	        if (ch === '"') { inStr = true; continue }
-	        if (ch === '[') depth++
-	        else if (ch === ']') { depth--; if (depth === 0) { end = i; break } }
-	      }
-		      if (end < 0) {
-		        // Recovery: LLM response truncated — try to salvage partial JSON
-		        // Find the last complete JSON object and close the array
-		        const lastObj = text.lastIndexOf('}')
-		        if (lastObj > start) {
-		          let recovered = text.slice(start, lastObj + 1)
-		          // If truncated mid-string, try to close it
-		          if ((recovered.match(/"/g) || []).length % 2 !== 0) {
-		            recovered += '"'
-		          }
-		          recovered += ']'
-		          try {
-		            arr = JSON.parse(fixJson(recovered))
-		            console.warn('LLM response was truncated — recovered ' + arr.length + ' segments from partial JSON')
-		          } catch(e) { /* fall through to error */ }
-		        }
-		        if (!Array.isArray(arr)) throw new Error('Response truncated (pos ' + text.length + '). LLM: ' + rawPreview)
-		      }
-	      try { arr = JSON.parse(fixJson(text.slice(start, end + 1))) }
-	      catch(e2) { throw new Error('JSON parse error' + (parseErr ? ' (' + parseErr + ')' : '') + '. LLM returned: ' + rawPreview) }
-	    }
-    
-    if (!Array.isArray(arr)) throw new Error('Not an array')
-
-    const chars = []
-    const seen = new Set()
-    arr.forEach(item => {
-      const name = item.role_name
-      if (name && !seen.has(name)) {
-        seen.add(name)
-        chars.push({
-          name,
-          role: name === '旁白' ? 'narrator' : 'supporting',
-          voice_design: item.voice_design || '',
-          gender: item.gender || '',
-          age: item.age || '',
-          personality: item.personality || '',
-          voice_id: ''
-        })
+      const res = await api.post('/api/v1/ai/llm-proxy', {
+        system_prompt: sp,
+        user_prompt: (chunks.length > 1 
+          ? `（第${ci+1}/${chunks.length}段）请分析以下文本并输出JSON数组：\n\n` 
+          : '请分析以下文本并输出JSON数组：\n\n') + chunk,
+      })
+      
+      let text = res.reply || ''
+      if (!text.trim()) {
+        throw new Error('LLM returned empty response (chunk ' + (ci+1) + '/' + chunks.length + ').')
       }
-    })
+      text = text.replace(/```json\n?/gi, '').replace(/```/g, '').trim()
 
-    const script = arr.map((item, i) => ({
+      const arr = parseScriptArray(text)
+      if (arr.length === 0) {
+        throw new Error('LLM returned empty array (chunk ' + (ci+1) + '/' + chunks.length + ').')
+      }
+
+      // Merge characters
+      arr.forEach(item => {
+        const name = item.role_name
+        if (name && !seenCharNames.has(name)) {
+          seenCharNames.add(name)
+          allChars.push({
+            name,
+            role: name === '旁白' ? 'narrator' : 'supporting',
+            voice_design: item.voice_design || '',
+            gender: item.gender || '',
+            age: item.age || '',
+            personality: item.personality || '',
+            voice_id: ''
+          })
+        }
+      })
+
+      allScripts.push(...arr)
+    }
+
+    // Build final merged script with correct indexing
+    const script = allScripts.map((item, i) => ({
       index: i,
       type: item.type === 'bgm' ? 'bgm' : 'dialogue',
       speaker: item.role_name || '',
@@ -256,10 +294,9 @@
       emotion: item.emotion || '',
       emotion_hint: '',
       scene: 'normal',
-      sfx: item.sfx || [],
     }))
 
-    return { chars, script }
+    return { chars: allChars, script }
   }
 
   async function aiAnalyzeBatch() {
