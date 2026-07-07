@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"ebook-audiobook/internal/model"
 )
@@ -76,8 +77,14 @@ func splitByHeadings(text, defaultTitle string) []model.Chapter {
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "#") {
+			title := strings.TrimLeft(trimmed, "# ")
+			// 跳过装饰性分隔线标题（OCR 将 PDF 分隔符误识别为标题）
+			// 如 ++++++, ------, ====== 等，不创建新的章节边界
+			if isDecorativeTitle(title) {
+				continue
+			}
 			flushChapter()
-			currentTitle = strings.TrimLeft(trimmed, "# ")
+			currentTitle = title
 			continue
 		}
 		currentLines = append(currentLines, line)
@@ -147,4 +154,24 @@ except:
 
 func init() {
 	_ = detectEncoding
+}
+
+// isDecorativeTitle 检测标题是否为装饰性符号（OCR 将 PDF 分隔线误识别为标题）。
+// 例如: ++++++, ------, ======, + + + + + 等。
+func isDecorativeTitle(title string) bool {
+	compact := strings.ReplaceAll(title, " ", "")
+	if len(compact) < 2 {
+		return false
+	}
+	first := rune(compact[0])
+	// 如果是字母、数字或 CJK 字符，不是装饰性符号
+	if unicode.IsLetter(first) || unicode.IsDigit(first) || unicode.Is(unicode.Han, first) {
+		return false
+	}
+	for _, r := range compact {
+		if r != first {
+			return false
+		}
+	}
+	return true
 }

@@ -80,19 +80,29 @@ var Tools = []Tool{
 
 // installCommands returns OS-appropriate install commands for a package
 func installCommands(pkg string) []string {
+	useSudo := !isRoot()
 	switch runtime.GOOS {
 	case "darwin":
 		return []string{fmt.Sprintf("brew install %s", pkg)}
 	case "linux":
-		// Try apt first, then dnf/yum, then pacman
+		sudo := ""
+		if useSudo {
+			sudo = "sudo "
+		}
 		return []string{
-			fmt.Sprintf("sudo apt-get install -y %s", pkg),
-			fmt.Sprintf("sudo dnf install -y %s", pkg),
-			fmt.Sprintf("sudo pacman -S --noconfirm %s", pkg),
+			fmt.Sprintf("%sapt-get install -y %s", sudo, pkg),
+			fmt.Sprintf("%sdnf install -y %s", sudo, pkg),
+			fmt.Sprintf("%spacman -S --noconfirm %s", sudo, pkg),
 		}
 	default:
 		return []string{fmt.Sprintf("choco install %s", pkg)}
 	}
+}
+
+// isRoot returns true if the current process is running as uid 0 (root).
+// Docker containers typically run as root, where sudo is not available.
+func isRoot() bool {
+	return os.Getuid() == 0
 }
 
 // CheckResult holds the results of checking all tools

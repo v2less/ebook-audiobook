@@ -266,7 +266,12 @@ func (m *Manager) splitBook(job *model.SynthesisJob, book *model.Book) ([]segTas
 			vp = lookupPresetVoice(voiceID)
 		}
 
-		texts := m.splitter.Split(ch.Content)
+		// 收集所有要合成的文本：章节标题（如存在）放在最前面
+		var texts []string
+		if ch.Title != "" {
+			texts = append(texts, ch.Title)
+		}
+		texts = append(texts, m.splitter.Split(ch.Content)...)
 		for si, text := range texts {
 			seg := &model.AudioSegment{
 				JobID: job.ID, ChapterIdx: ch.Index, SegmentIdx: si,

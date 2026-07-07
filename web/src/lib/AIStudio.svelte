@@ -137,7 +137,8 @@
   }
 
   async function analyzeSingleChapter(chapter, idx) {
-    const rawText = (chapter.content || '').slice(0, 15000)
+	    const titlePrefix = chapter.title ? chapter.title + '\n\n' : ''
+	    const rawText = (titlePrefix + (chapter.content || '')).slice(0, 15000)
     if (!rawText.trim()) throw new Error('No text content in book.')
     if (rawText.length < 50) {
       throw new Error('Text too short (' + rawText.length + ' chars). The parser may have failed.')

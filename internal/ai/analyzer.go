@@ -87,6 +87,9 @@ The JSON must have these fields:
 WRITE emotion_hint AND voice_design IN THE SAME LANGUAGE AS THE SOURCE TEXT.`
 
 	textPreview := chapter.Content
+	if chapter.Title != "" {
+		textPreview = chapter.Title + "\n\n" + chapter.Content
+	}
 	if len(textPreview) > 8000 {
 		textPreview = textPreview[:8000] + "\n...(truncated)"
 	}
