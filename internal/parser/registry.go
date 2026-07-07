@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ type Registry struct {
 }
 
 func NewRegistry() *Registry {
+	log.Printf("[registry] NewRegistry: initializing parsers")
 	r := &Registry{parsers: make(map[string]Parser)}
 
 	// Register built-in parsers
@@ -49,6 +51,7 @@ func NewRegistry() *Registry {
 
 // Parse auto-detects format and parses the ebook
 func (r *Registry) Parse(filePath string) (*model.Book, error) {
+	log.Printf("[registry] Parse called: %s", filepath.Base(filePath))
 	ext := strings.ToLower(filepath.Ext(filePath))
 	parser, ok := r.parsers[ext]
 	if !ok {
@@ -57,8 +60,10 @@ func (r *Registry) Parse(filePath string) (*model.Book, error) {
 
 	book, err := parser.Parse(filePath)
 	if err != nil {
+		log.Printf("[registry] Parse FAILED: %v", err)
 		return nil, fmt.Errorf("parse %s: %w", ext, err)
 	}
+	log.Printf("[registry] Parse OK: %d chapters, title=%q", len(book.Chapters), book.Title)
 
 	// Post-process: clean all chapters
 	cleaner := NewCleaner()
