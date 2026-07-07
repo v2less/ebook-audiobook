@@ -201,7 +201,18 @@
 	        if (ch === '[') depth++
 	        else if (ch === ']') { depth--; if (depth === 0) { end = i; break } }
 	      }
-	      if (end < 0) throw new Error('Unclosed bracket. LLM returned: ' + rawPreview)
+		      if (end < 0) {
+		        // Recovery: LLM response truncated — try to salvage partial JSON
+		        // Find the last complete JSON object and close the array
+		        const lastObj = text.lastIndexOf('}')
+		        if (lastObj > start) {
+		          try {
+		            arr = JSON.parse(fixJson(text.slice(start, lastObj + 1) + ']'))
+		            console.warn('LLM response was truncated — recovered ' + arr.length + ' segments from partial JSON')
+		          } catch(e) { /* fall through to error */ }
+		        }
+		        if (!Array.isArray(arr)) throw new Error('Unclosed bracket (response truncated). LLM: ' + rawPreview)
+		      }
 	      try { arr = JSON.parse(fixJson(text.slice(start, end + 1))) }
 	      catch(e2) { throw new Error('JSON parse error' + (parseErr ? ' (' + parseErr + ')' : '') + '. LLM returned: ' + rawPreview) }
 	    }

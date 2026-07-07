@@ -144,10 +144,11 @@ func fixLLMJSON(s string) string {
 
 func (c *Client) chat(ctx context.Context, messages []chatMessage) (string, error) {
 	reqBody := chatRequest{
-		Model:       c.model,
-		Messages:    messages,
-		Temperature: 0.3,
-		MaxTokens:   16384,
+		Model:               c.model,
+		Messages:            messages,
+		Temperature:         0.3,
+		MaxTokens:           32768,
+		MaxCompletionTokens: 32768,
 	}
 
 	payload, err := json.Marshal(reqBody)
@@ -208,6 +209,9 @@ func (c *Client) chat(ctx context.Context, messages []chatMessage) (string, erro
 	reply := result.Choices[0].Message.Content
 	if reply == "" {
 		log.Printf("⚠️  LLM response has empty content (%d bytes): %.300s", len(body), content)
+	} else if result.Choices[0].FinishReason != "" && result.Choices[0].FinishReason != "stop" {
+		log.Printf("⚠️  LLM finish_reason=%s — response may be truncated (%d bytes, %d chars)",
+			result.Choices[0].FinishReason, len(body), len(reply))
 	}
 	return reply, nil
 }
@@ -291,10 +295,11 @@ type chatMessage struct {
 }
 
 type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	Temperature float64       `json:"temperature"`
-	MaxTokens   int           `json:"max_tokens"`
+	Model               string        `json:"model"`
+	Messages            []chatMessage `json:"messages"`
+	Temperature         float64       `json:"temperature"`
+	MaxTokens           int           `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int           `json:"max_completion_tokens,omitempty"`
 }
 
 type chatResponse struct {
@@ -302,6 +307,7 @@ type chatResponse struct {
 		Message struct {
 			Content string `json:"content"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 }
 
