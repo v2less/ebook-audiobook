@@ -138,19 +138,24 @@
 
   async function analyzeSingleChapter(chapter, idx) {
 	    const titlePrefix = chapter.title ? chapter.title + '\n\n' : ''
-	    const rawText = (titlePrefix + (chapter.content || '')).slice(0, 15000)
-    if (!rawText.trim()) throw new Error('No text content in book.')
-    if (rawText.length < 50) {
-      throw new Error('Text too short (' + rawText.length + ' chars). The parser may have failed.')
-    }
+	    // 限制输入长度，避免 LLM 输出被截断
+	    // （输出需要包含原文的全部 JSON 重排，长度接近输入，超出模型限制会导致截断）
+	    const rawText = (titlePrefix + (chapter.content || '')).slice(0, 8000)
+	    if (!rawText.trim()) throw new Error('No text content in book.')
+	    if (rawText.length < 50) {
+	      throw new Error('Text too short (' + rawText.length + ' chars). The parser may have failed.')
+	    }
 
-    let sp = `你的任务是将给定小说内容拆分为台词和旁白，输出严格JSON数组。
+	    let sp = `你的任务是将给定小说内容拆分为台词和旁白，输出严格JSON数组。
 输出格式：
 [
   {"type":"dialogue","role_name":"角色名","text_content":"台词","emotion":"情绪","intensity":"强度","break_duration":0},
   {"type":"dialogue","role_name":"旁白","text_content":"旁白内容...","emotion":"平静","intensity":"中等","break_duration":0}
 ]
-规则：旁白为"旁白"，输出纯JSON数组不含markdown，完整保留原文`
+规则：
+1. 旁白的角色名固定为"旁白"
+2. 直接输出纯JSON数组，不要用markdown代码块（不要\`\`\`json）
+3. 完整保留原文内容，不要省略`
     try {
       const saved = localStorage.getItem('prompts')
       if (saved) {
@@ -159,9 +164,9 @@
       }
     } catch(e) {}
 
-    const res = await api.post('/api/v1/ai/llm-proxy', {
-      system_prompt: sp,
-      user_prompt: '请分析以下小说文本：\n\n' + rawText + '\n\n请输出JSON数组。',
+	    const res = await api.post('/api/v1/ai/llm-proxy', {
+	      system_prompt: sp,
+	      user_prompt: '请分析以下文本并输出JSON数组：\n\n' + rawText,
     })
     
     let text = res.reply || ''
