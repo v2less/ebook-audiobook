@@ -144,11 +144,11 @@ func fixLLMJSON(s string) string {
 
 func (c *Client) chat(ctx context.Context, messages []chatMessage) (string, error) {
 	reqBody := chatRequest{
-		Model:               c.model,
-		Messages:            messages,
-		Temperature:         0.3,
-		MaxTokens:           32768,
-		MaxCompletionTokens: 32768,
+		Model:       c.model,
+		Messages:    messages,
+		Temperature: 0.3,
+		// Don't set max_tokens — let the API use its own default (usually high)
+		// Setting a value here can conflict with max_completion_tokens on some providers
 	}
 
 	payload, err := json.Marshal(reqBody)
@@ -295,11 +295,9 @@ type chatMessage struct {
 }
 
 type chatRequest struct {
-	Model               string        `json:"model"`
-	Messages            []chatMessage `json:"messages"`
-	Temperature         float64       `json:"temperature"`
-	MaxTokens           int           `json:"max_tokens,omitempty"`
-	MaxCompletionTokens int           `json:"max_completion_tokens,omitempty"`
+	Model       string        `json:"model"`
+	Messages    []chatMessage `json:"messages"`
+	Temperature float64       `json:"temperature"`
 }
 
 type chatResponse struct {

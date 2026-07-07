@@ -206,12 +206,18 @@
 		        // Find the last complete JSON object and close the array
 		        const lastObj = text.lastIndexOf('}')
 		        if (lastObj > start) {
+		          let recovered = text.slice(start, lastObj + 1)
+		          // If truncated mid-string, try to close it
+		          if ((recovered.match(/"/g) || []).length % 2 !== 0) {
+		            recovered += '"'
+		          }
+		          recovered += ']'
 		          try {
-		            arr = JSON.parse(fixJson(text.slice(start, lastObj + 1) + ']'))
+		            arr = JSON.parse(fixJson(recovered))
 		            console.warn('LLM response was truncated — recovered ' + arr.length + ' segments from partial JSON')
 		          } catch(e) { /* fall through to error */ }
 		        }
-		        if (!Array.isArray(arr)) throw new Error('Unclosed bracket (response truncated). LLM: ' + rawPreview)
+		        if (!Array.isArray(arr)) throw new Error('Response truncated (pos ' + text.length + '). LLM: ' + rawPreview)
 		      }
 	      try { arr = JSON.parse(fixJson(text.slice(start, end + 1))) }
 	      catch(e2) { throw new Error('JSON parse error' + (parseErr ? ' (' + parseErr + ')' : '') + '. LLM returned: ' + rawPreview) }
