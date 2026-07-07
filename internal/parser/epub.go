@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -82,7 +83,7 @@ func (p *EPUBParser) buildBookFromMarkdownFiles(dir string, entries []os.DirEntr
 	const minContentLen = 100 // 跳过封面/纯图片页等无效章节
 
 	logf := func(format string, args ...interface{}) {
-		fmt.Printf("[epub] "+format+"\n", args...)
+		log.Printf("[epub] "+format, args...)
 	}
 
 	var chapters []model.Chapter
