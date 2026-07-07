@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -52,7 +53,28 @@ func (p *EPUBParser) parseViaEpub2MD(filePath string) (*model.Book, error) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	absPath, _ := filepath.Abs(filePath)
+	// epub2md creates output next to the input file (not in the working dir).
+	// Copy the EPUB into tmpDir so output lands inside tmpDir.
+	epubBase := filepath.Base(filePath)
+	tmpEPUB := filepath.Join(tmpDir, epubBase)
+	src, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("open epub: %w", err)
+	}
+	dst, err := os.Create(tmpEPUB)
+	if err != nil {
+		src.Close()
+		return nil, fmt.Errorf("create tmp epub: %w", err)
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		src.Close()
+		dst.Close()
+		return nil, fmt.Errorf("copy epub to tmp: %w", err)
+	}
+	src.Close()
+	dst.Close()
+
+	absPath, _ := filepath.Abs(tmpEPUB)
 	cmd := exec.Command("epub2md", absPath)
 	cmd.Dir = tmpDir
 	var stderr bytes.Buffer
@@ -67,13 +89,21 @@ func (p *EPUBParser) parseViaEpub2MD(filePath string) (*model.Book, error) {
 		}
 	}
 
-	// Read generated markdown files
-	entries, err := os.ReadDir(tmpDir)
+	// epub2md outputs to <input-dir>/<name-without-ext>/
+	// Since we copied to tmpDir, output is at tmpDir/<name-without-ext>/
+	baseName := strings.TrimSuffix(epubBase, filepath.Ext(epubBase))
+	mdDir := filepath.Join(tmpDir, baseName)
+	entries, err := os.ReadDir(mdDir)
 	if err != nil {
-		return nil, fmt.Errorf("read output dir: %w", err)
+		// Fallback: older epub2md may output directly to tmpDir
+		mdDir = tmpDir
+		entries, err = os.ReadDir(mdDir)
+		if err != nil {
+			return nil, fmt.Errorf("read epub2md output dir: %w", err)
+		}
 	}
 
-	return p.buildBookFromMarkdownFiles(tmpDir, entries, filePath)
+	return p.buildBookFromMarkdownFiles(mdDir, entries, filePath)
 }
 
 // buildBookFromMarkdownFiles builds a Book from markdown files output by epub2md
