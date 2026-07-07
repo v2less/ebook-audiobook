@@ -24,11 +24,14 @@ func (p *EPUBParser) SupportedFormats() []string {
 }
 
 func (p *EPUBParser) Parse(filePath string) (*model.Book, error) {
+	log.Printf("[epub] Parse called for: %s", filepath.Base(filePath))
 	// Try epub2md CLI first
 	book, err := p.parseViaEpub2MD(filePath)
 	if err == nil {
+		log.Printf("[epub] epub2md success: %d chapters", len(book.Chapters))
 		return book, nil
 	}
+	log.Printf("[epub] epub2md failed: %v, falling back to direct parse", err)
 	// Fallback: parse directly
 	return p.parseDirect(filePath)
 }
