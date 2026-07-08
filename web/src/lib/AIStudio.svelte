@@ -220,16 +220,25 @@
     const MAX_CHUNK = 8000
     const chunks = splitTextAtSentence(fullText, MAX_CHUNK)
 
-    let sp = `你的任务是将给定小说内容拆分为台词和旁白，输出严格JSON数组。
-输出格式：
+    let sp = `你的任务是将小说文本拆分为对白和旁白。严格要求：
+
+1. 对白（对话）中出现的引导内原文，旁白中不得重复。
+   错误示例：
+     旁白："真主命令道："你们下去吧！""
+     阿丹："你们下去吧！"
+   正确示例：
+     旁白："真主命令道："
+     阿丹："你们下去吧！"
+
+2. 描述性文字（如"阿丹回答"、"他说"、"易卜里斯发誓道"）放在旁白中，不要把对话原文也塞进旁白。
+
+3. 角色名必须统一：同一人物在所有段落中用相同名称。
+
+4. 输出纯JSON数组（不含markdown代码块），格式：
 [
   {"type":"dialogue","role_name":"角色名","text_content":"台词","emotion":"情绪","intensity":"强度","break_duration":0},
-  {"type":"dialogue","role_name":"旁白","text_content":"旁白内容...","emotion":"平静","intensity":"中等","break_duration":0}
-]
-规则：
-1. 旁白的角色名固定为"旁白"
-2. 直接输出纯JSON数组，不要用markdown代码块（不要\`\`\`json）
-3. 完整保留原文内容，不要省略`
+  {"type":"dialogue","role_name":"旁白","text_content":"旁白描述","emotion":"平静","intensity":"中等","break_duration":0}
+]`
     try {
       const saved = localStorage.getItem('prompts')
       if (saved) {
