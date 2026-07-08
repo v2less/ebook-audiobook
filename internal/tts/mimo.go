@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"ebook-audiobook/internal/model"
 )
@@ -40,7 +41,9 @@ func NewMiMoEngine(apiKey, baseURL string) *MiMoEngine {
 	return &MiMoEngine{
 		apiKey:  apiKey,
 		baseURL: baseURL,
-		client:  &http.Client{},
+		client: &http.Client{
+			Timeout: 10 * time.Minute,
+		},
 	}
 }
 

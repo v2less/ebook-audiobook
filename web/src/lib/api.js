@@ -103,17 +103,24 @@ export const api = {
     return res.arrayBuffer()
   },
 
-  async postBlob(path, body) {
-    const res = await fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}))
-      throw new Error(extractError(errBody) || res.statusText)
+  async postBlob(path, body, timeoutMs = 600000) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}))
+        throw new Error(extractError(errBody) || res.statusText)
+      }
+      return res.blob()
+    } finally {
+      clearTimeout(timer)
     }
-    return res.blob()
   },
 
   async postMix(path, body) {
