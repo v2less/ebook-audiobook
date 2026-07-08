@@ -136,6 +136,32 @@
     }
   }
 
+  // 自动修复 LLM 误将中文翻译为英文的常见错误
+  const TRANSLATION_FIXES = [
+    [/\band\b/g, '和'],
+    [/\bI\b/g, '我'],
+    [/\byou\b/g, '你'],
+    [/\bhe\b/g, '他'],
+    [/\bshe\b/g, '她'],
+    [/\bit\b/g, '它'],
+    [/\bthey\b/g, '他们'],
+    [/\bwe\b/g, '我们'],
+    [/\bthe\b/g, ''],
+    [/\bis\b/g, '是'],
+    [/\bof\b/g, '的'],
+    [/\bto\b/g, '到'],
+    [/\bin\b/g, '在'],
+    [/\bthat\b/g, '那'],
+  ]
+  function fixTranslation(item) {
+    if (!item.text_content) return
+    // 只在含中文的文本中修复（避免误伤纯英文内容）
+    if (!/[\u4e00-\u9fff]/.test(item.text_content)) return
+    for (const [re, replacement] of TRANSLATION_FIXES) {
+      item.text_content = item.text_content.replace(re, replacement)
+    }
+  }
+
   // 将文本在句末标点处断开，每段不超过 maxLen 字符
   function splitTextAtSentence(text, maxLen) {
     if (text.length <= maxLen) return [text]
@@ -234,7 +260,8 @@
 
 3. 角色名必须统一：同一人物在所有段落中用相同名称。
 
-4. 严禁翻译或篡改原文：保持中文原文不变，不要把任何中文文字翻译成英文或其他语言。例如"我"不能变成"I"，"你"不能变成"you"。
+4. 严禁翻译或篡改原文：必须逐字保留中文原文，禁止将任何中文字词替换为英文。例如：
+   "我" 不能变成 "I"、"你" 不能变成 "you"、"和" 不能变成 "and"、"的" 不能变成 "of"。任何翻译行为都是严重错误。
 
 5. 输出纯JSON数组（不含markdown代码块），格式：
 [
@@ -275,6 +302,9 @@
       if (arr.length === 0) {
         throw new Error('LLM returned empty array (chunk ' + (ci+1) + '/' + chunks.length + ').')
       }
+
+      // 自动修复 LLM 误翻译的中文字词
+      arr.forEach(item => fixTranslation(item))
 
       // Merge characters
       arr.forEach(item => {
